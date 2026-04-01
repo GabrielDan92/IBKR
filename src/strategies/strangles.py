@@ -96,6 +96,10 @@ def calculate_strangles(
         F.col("c.underlying_price") - upper_be
     ) / F.col("c.underlying_price")) * 100
 
+    # ROC: premium received / average of the two strikes
+    avg_strike = (F.col("p.strike") + F.col("c.strike")) / 2
+    roc = (total_premium / avg_strike) * 100
+
     result = (
         strangles
         .select(
@@ -114,6 +118,7 @@ def calculate_strangles(
             pct_to_call_strike.alias("pct_to_call_strike"),
             pct_to_lower_be.alias("pct_to_lower_breakeven"),
             pct_to_upper_be.alias("pct_to_upper_breakeven"),
+            roc.alias("ROC"),
             F.col("p.dte").alias("dte"),
             # Net Greeks (both legs are short → add deltas directly)
             (F.col("p.delta") + F.col("c.delta")).alias("net_delta"),

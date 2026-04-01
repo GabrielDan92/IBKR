@@ -27,19 +27,20 @@ def calculate_spreads(
     chain_df: DataFrame,
 ) -> DataFrame:
     """
-    Generate all vertical credit-spread combinations and rank them.
+    Generate all vertical spread combinations (credit AND debit) and rank them.
 
     Logic
     -----
     1. **Leg selection** — all contracts with a valid ``mid`` price.
-    2. **Self-join** — pair each potential short leg with every
-       further-OTM contract of the same symbol / expiration / right
-       (the long leg).
-    3. **Metric calculation** — credit, width, max profit, max loss,
+       Short legs must be OTM or ATM.
+    2. **Self-join** — pair each short leg with every other contract
+       of the same symbol / expiration / right (both strike orderings).
+    3. **Metric calculation** — net premium, width, max profit, max loss,
        spread ratio, ROC, breakeven, % to strike, % to breakeven,
        and net Greeks for the spread.
-    4. **Ranking** — ordered by ``spread_ratio DESC`` (largest credit
-       yield first).
+    4. **Strategy labelling** — e.g. "Bull Put Credit Spread",
+       "Bull Call Debit Spread", "Bear Call Credit Spread", etc.
+    5. **Ranking** — ordered by ``spread_ratio DESC``.
 
     Parameters
     ----------
@@ -71,85 +72,114 @@ def calculate_spreads(
     long_legs = valid.alias("l")
 
     # ── self-join ────────────────────────────────────────────────────
-    #
-    # Bull put spread:  short put at higher strike, long put at lower
-    #   → credit = short mid − long mid
-    #   → long put strike < short put strike
-    #
-    # Bear call spread: short call at lower strike, long call at higher
-    #   → credit = short mid − long mid
-    #   → long call strike > short call strike
+    # Pair every short leg with every other contract of the same
+    # symbol / expiration / right.  Both strike orderings are kept
+    # so we produce credit AND debit spreads.
 
     join_cond = [
         F.col("s.symbol") == F.col("l.symbol"),
         F.col("s.expiration") == F.col("l.expiration"),
         F.col("s.right") == F.col("l.right"),
         F.col("s.strike") != F.col("l.strike"),
-        # Long leg is further OTM than the short leg
-        F.when(
-            F.col("s.right") == "P",
-            F.col("l.strike") < F.col("s.strike"),
-        ).otherwise(
-            F.col("l.strike") > F.col("s.strike"),
-        ),
     ]
 
     spreads = short_legs.join(long_legs, on=join_cond, how="inner")
 
     # ── metrics ──────────────────────────────────────────────────────
 
-    credit = F.col("s.mid") - F.col("l.mid")
+    # net_premium > 0 → credit received;  < 0 → debit paid
+    net_premium = F.col("s.mid") - F.col("l.mid")
     width = F.abs(F.col("s.strike") - F.col("l.strike"))
-    raw_max_loss = width - credit     # per-share max loss
-    max_profit = credit * 100         # ×100 shares per contract
-    max_loss = raw_max_loss * 100     # ×100 shares per contract
-    spread_ratio = (credit / width) * 100
-    roc = F.when(raw_max_loss > 0, (credit / raw_max_loss) * 100)
+    is_credit = net_premium >= 0
+
+    # Per-share max profit / max loss (always positive values)
+    raw_max_profit = F.when(is_credit, net_premium).otherwise(width + net_premium)
+    raw_max_loss = F.when(is_credit, width - net_premium).otherwise(F.abs(net_premium))
+
+    max_profit = raw_max_profit * 100   # ×100 shares per contract
+    max_loss = raw_max_loss * 100       # ×100 shares per contract
+
+    spread_ratio = (F.abs(net_premium) / width) * 100
+    credit_yield = F.when(raw_max_loss > 0, (raw_max_profit / raw_max_loss) * 100)
+    roc = (F.abs(net_premium) / F.col("s.strike")) * 100
 
     # Breakeven:
-    #   Bull put → short_strike − credit  (want price to stay above)
-    #   Bear call → short_strike + credit  (want price to stay below)
+    #   Credit spreads → based on short strike
+    #     Bull Put Credit:  short_strike − premium
+    #     Bear Call Credit: short_strike + premium
+    #   Debit spreads → based on long strike
+    #     Bull Call Debit:  long_strike + |premium|
+    #     Bear Put Debit:   long_strike − |premium|
     breakeven = F.when(
-        F.col("s.right") == "P",
-        F.col("s.strike") - credit,
+        is_credit,
+        F.when(F.col("s.right") == "P",
+               F.col("s.strike") - net_premium
+        ).otherwise(
+               F.col("s.strike") + net_premium
+        ),
     ).otherwise(
-        F.col("s.strike") + credit,
+        F.when(F.col("s.right") == "P",
+               F.col("l.strike") + net_premium      # net_premium < 0
+        ).otherwise(
+               F.col("l.strike") - net_premium      # net_premium < 0
+        ),
     )
 
     pct_to_short_strike = (F.abs(
         F.col("s.underlying_price") - F.col("s.strike")
+    ) / F.col("s.underlying_price")) * 100
+    pct_to_long_strike = (F.abs(
+        F.col("s.underlying_price") - F.col("l.strike")
     ) / F.col("s.underlying_price")) * 100
 
     pct_to_breakeven = (F.abs(
         F.col("s.underlying_price") - breakeven
     ) / F.col("s.underlying_price")) * 100
 
-    strategy_label = F.when(
-        F.col("s.right") == "P", F.lit("Bull Put")
-    ).otherwise(F.lit("Bear Call"))
+    # ── strategy label ───────────────────────────────────────────────
+    # Direction: Bull = profit when stock rises, Bear = profit when falls
+    #   Puts:  s.strike > l.strike → Bull;  s.strike < l.strike → Bear
+    #   Calls: s.strike > l.strike → Bull;  s.strike < l.strike → Bear
+    #   (selling higher-strike put or buying lower-strike call = bullish)
+    direction = F.when(
+        F.col("s.right") == "P",
+        F.when(F.col("s.strike") > F.col("l.strike"), F.lit("Bull"))
+         .otherwise(F.lit("Bear")),
+    ).otherwise(
+        F.when(F.col("s.strike") < F.col("l.strike"), F.lit("Bear"))
+         .otherwise(F.lit("Bull")),
+    )
+    right_label = F.when(F.col("s.right") == "P", F.lit("Put")).otherwise(F.lit("Call"))
+    spread_type = F.when(is_credit, F.lit("Credit")).otherwise(F.lit("Debit"))
+    strategy_label = F.concat(
+        direction, F.lit(" "), right_label, F.lit(" "), spread_type, F.lit(" Spread")
+    )
 
     result = (
         spreads
         .select(
             F.col("s.symbol").alias("symbol"),
             F.col("s.expiration").alias("expiration"),
+            F.col("s.right").alias("right"),
             strategy_label.alias("strategy"),
             F.col("s.strike").alias("short_strike"),
-            F.col("l.strike").alias("long_strike"),
+            pct_to_short_strike.alias("pct_to_short_strike"),
             F.col("s.mid").alias("short_mid"),
-            F.col("l.mid").alias("long_mid"),
             F.col("s.delta").alias("short_delta"),
+            F.col("l.strike").alias("long_strike"),
+            pct_to_long_strike.alias("pct_to_long_strike"),
+            F.col("l.mid").alias("long_mid"),
             F.col("l.delta").alias("long_delta"),
-            (credit * 100).alias("credit"),
+            (net_premium * 100).alias("credit"),
             width.alias("width"),
             max_profit.alias("max_profit"),
             max_loss.alias("max_loss"),
             spread_ratio.alias("spread_ratio"),
+            credit_yield.alias("credit_yield"),
             roc.alias("roc"),
             breakeven.alias("breakeven"),
-            F.col("s.underlying_price").alias("underlying_price"),
-            pct_to_short_strike.alias("pct_to_short_strike"),
             pct_to_breakeven.alias("pct_to_breakeven"),
+            F.col("s.underlying_price").alias("underlying_price"),
             F.col("s.dte").alias("dte"),
             # Net Greeks (short − long because we *sell* the short leg)
             (F.col("s.delta") - F.col("l.delta")).alias("net_delta"),
@@ -157,7 +187,25 @@ def calculate_spreads(
             (F.col("s.theta") - F.col("l.theta")).alias("net_theta"),
             (F.col("s.vega") - F.col("l.vega")).alias("net_vega"),
         )
-        .filter(F.col("credit") > 0)  # only valid credit spreads
+        .filter(F.col("max_profit") > 0)   # valid spreads only
+        .filter(F.col("max_loss") > 0)
+    )
+
+    # ── deduplicate mirror pairs ─────────────────────────────────────
+    # When both legs are OTM, the pair (A, B) appears twice with roles
+    # swapped — once as credit and once as debit.  Keep only one row
+    # per unique pair of contracts, preferring the credit version.
+    dedup_window = Window.partitionBy(
+        "symbol", "expiration", "right",
+        F.least("short_strike", "long_strike"),
+        F.greatest("short_strike", "long_strike"),
+    ).orderBy(F.col("credit").desc())   # credit version wins
+
+    result = (
+        result
+        .withColumn("_dedup_rank", F.row_number().over(dedup_window))
+        .filter(F.col("_dedup_rank") == 1)
+        .drop("_dedup_rank")
         .orderBy(F.col("spread_ratio").desc())
     )
 
@@ -186,20 +234,23 @@ def calculate_iron_condors(
         One row per iron condor with combined metrics.
     """
 
-    # ── pick the top spread per (symbol, expiration, strategy) ───────
-    window = Window.partitionBy("symbol", "expiration", "strategy").orderBy(
+    # Only credit spreads make sense for iron condors
+    credit_spreads = spreads_df.filter(F.col("strategy").contains("Credit"))
+
+    # ── pick the top credit spread per (symbol, expiration, right) ───
+    window = Window.partitionBy("symbol", "expiration", "right").orderBy(
         F.col("spread_ratio").desc()
     )
 
     top_spreads = (
-        spreads_df
+        credit_spreads
         .withColumn("_rank", F.row_number().over(window))
         .filter(F.col("_rank") == 1)
         .drop("_rank")
     )
 
-    put_side = top_spreads.filter(F.col("strategy") == "Bull Put").alias("p")
-    call_side = top_spreads.filter(F.col("strategy") == "Bear Call").alias("c")
+    put_side = top_spreads.filter(F.col("right") == "P").alias("p")
+    call_side = top_spreads.filter(F.col("right") == "C").alias("c")
 
     condor_join = [
         F.col("p.symbol") == F.col("c.symbol"),
@@ -215,7 +266,11 @@ def calculate_iron_condors(
     wider_width_contract = F.greatest(F.col("p.width"), F.col("c.width")) * 100
     ic_max_loss = wider_width_contract - total_credit
     ic_ratio = (total_credit / wider_width_contract) * 100
-    ic_roc = F.when(ic_max_loss > 0, (total_credit / ic_max_loss) * 100)
+    ic_credit_yield = F.when(ic_max_loss > 0, (total_credit / ic_max_loss) * 100)
+    # ROC: per-share total credit / average of the two short strikes
+    ic_per_share_credit = total_credit / 100
+    avg_short_strike = (F.col("p.short_strike") + F.col("c.short_strike")) / 2
+    ic_roc = (ic_per_share_credit / avg_short_strike) * 100
 
     # Breakevens use per-share credit (÷100) against per-share strikes
     per_share_put_credit = F.col("p.credit") / 100
@@ -238,7 +293,8 @@ def calculate_iron_condors(
         total_credit.alias("max_profit"),
         ic_max_loss.alias("max_loss"),
         ic_ratio.alias("spread_ratio"),
-        ic_roc.alias("roc"),
+        ic_credit_yield.alias("credit_yield"),
+        ic_roc.alias("ROC"),
         lower_be.alias("lower_breakeven"),
         upper_be.alias("upper_breakeven"),
         F.col("p.underlying_price").alias("underlying_price"),

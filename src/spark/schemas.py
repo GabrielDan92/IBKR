@@ -9,6 +9,7 @@ costly schema-inference pass when creating DataFrames.
 from __future__ import annotations
 
 from pyspark.sql.types import (
+    DateType,
     DoubleType,
     IntegerType,
     StringType,
@@ -21,7 +22,7 @@ from pyspark.sql.types import (
 OPTION_CHAIN_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),   # YYYYMMDD
+        StructField("expiration", DateType(), nullable=False),
         StructField("strike", DoubleType(), nullable=False),
         StructField("right", StringType(), nullable=False),         # C or P
         StructField("bid", DoubleType(), nullable=True),
@@ -45,7 +46,7 @@ OPTION_CHAIN_SCHEMA = StructType(
 SPREAD_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("strategy", StringType(), nullable=False),          # bull_put, bear_call
         StructField("short_strike", DoubleType(), nullable=False),
         StructField("long_strike", DoubleType(), nullable=False),
@@ -76,7 +77,7 @@ SPREAD_SCHEMA = StructType(
 IRON_CONDOR_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("put_short_strike", DoubleType(), nullable=False),
         StructField("put_long_strike", DoubleType(), nullable=False),
         StructField("call_short_strike", DoubleType(), nullable=False),
@@ -108,7 +109,7 @@ IRON_CONDOR_SCHEMA = StructType(
 STRANGLE_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("put_strike", DoubleType(), nullable=False),
         StructField("call_strike", DoubleType(), nullable=False),
         StructField("put_mid", DoubleType(), nullable=True),
