@@ -23,6 +23,10 @@ services:
     image: ghcr.io/gnzsnz/ib-gateway:stable
     restart: unless-stopped
     env_file: ../.env
+    environment:
+      # Credentials read from OS environment (set in ~/.zshrc)
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
     ports:
       - "127.0.0.1:4001:4003"   # live trading API
       - "127.0.0.1:4002:4004"   # paper trading API
@@ -70,6 +74,7 @@ services:
     env_file: ../.env
     environment:
       OUTPUT_DIR: /opt/app/data
+      STREAMLIT_CONFIG_DIR: /opt/app/src/dashboard/.streamlit
     ports:
       - "127.0.0.1:8501:8501"
     volumes:

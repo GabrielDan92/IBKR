@@ -9,6 +9,7 @@ costly schema-inference pass when creating DataFrames.
 from __future__ import annotations
 
 from pyspark.sql.types import (
+    DateType,
     DoubleType,
     IntegerType,
     StringType,
@@ -21,7 +22,7 @@ from pyspark.sql.types import (
 OPTION_CHAIN_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),   # YYYYMMDD
+        StructField("expiration", DateType(), nullable=False),
         StructField("strike", DoubleType(), nullable=False),
         StructField("right", StringType(), nullable=False),         # C or P
         StructField("bid", DoubleType(), nullable=True),
@@ -45,12 +46,12 @@ OPTION_CHAIN_SCHEMA = StructType(
 SPREAD_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("strategy", StringType(), nullable=False),          # bull_put, bear_call
         StructField("short_strike", DoubleType(), nullable=False),
         StructField("long_strike", DoubleType(), nullable=False),
-        StructField("short_bid", DoubleType(), nullable=True),
-        StructField("long_ask", DoubleType(), nullable=True),
+        StructField("short_mid", DoubleType(), nullable=True),
+        StructField("long_mid", DoubleType(), nullable=True),
         StructField("short_delta", DoubleType(), nullable=True),
         StructField("long_delta", DoubleType(), nullable=True),
         StructField("credit", DoubleType(), nullable=True),
@@ -76,7 +77,7 @@ SPREAD_SCHEMA = StructType(
 IRON_CONDOR_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("put_short_strike", DoubleType(), nullable=False),
         StructField("put_long_strike", DoubleType(), nullable=False),
         StructField("call_short_strike", DoubleType(), nullable=False),
@@ -108,11 +109,11 @@ IRON_CONDOR_SCHEMA = StructType(
 STRANGLE_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
-        StructField("expiration", StringType(), nullable=False),
+        StructField("expiration", DateType(), nullable=False),
         StructField("put_strike", DoubleType(), nullable=False),
         StructField("call_strike", DoubleType(), nullable=False),
-        StructField("put_bid", DoubleType(), nullable=True),
-        StructField("call_bid", DoubleType(), nullable=True),
+        StructField("put_mid", DoubleType(), nullable=True),
+        StructField("call_mid", DoubleType(), nullable=True),
         StructField("total_premium", DoubleType(), nullable=True),
         StructField("lower_breakeven", DoubleType(), nullable=True),
         StructField("upper_breakeven", DoubleType(), nullable=True),

@@ -385,9 +385,13 @@ def _ticker_to_row(
     bid = _safe_float(ticker.bid)
     ask = _safe_float(ticker.ask)
     last = _safe_float(ticker.last)
+    close = _safe_float(ticker.close)
 
-    # Skip contracts with no market
-    if bid is None and ask is None and last is None:
+    # Mid price: best available
+    mid = _mid_price(ticker)
+
+    # Skip contracts with no usable price at all
+    if mid is None:
         return None
 
     # Greeks from model computation (tick type 13)
@@ -397,12 +401,6 @@ def _ticker_to_row(
     theta = _safe_float(greeks.theta) if greeks else None
     vega = _safe_float(greeks.vega) if greeks else None
     implied_vol = _safe_float(greeks.impliedVol) if greeks else None
-
-    # Mid price
-    if bid is not None and ask is not None:
-        mid = (bid + ask) / 2.0
-    else:
-        mid = last
 
     # DTE
     expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, "%Y%m%d").date()
@@ -424,7 +422,7 @@ def _ticker_to_row(
 
     return {
         "symbol": symbol,
-        "expiration": contract.lastTradeDateOrContractMonth,
+        "expiration": expiry_date,
         "strike": float(contract.strike),
         "right": contract.right,
         "bid": bid,

@@ -56,7 +56,7 @@ GENERIC_TICKS = "100,101,106"
 # ═════════════════════════════════════════════════════════════════════
 BATCH_SIZE = 45          # concurrent reqMktData calls (stay under 50 req/s)
 BATCH_PAUSE_S = 1.0      # seconds to sleep between batches
-TICK_SETTLE_S = 2.0      # seconds to wait for tick data to arrive
+TICK_SETTLE_S = 3.0      # seconds to wait for tick data to arrive
 QUALIFY_BATCH_SIZE = 100  # contracts per qualifyContractsAsync batch
 QUALIFY_PAUSE_S = 0.5    # seconds between qualify batches
 
@@ -70,7 +70,7 @@ SHORT_DELTA = _env_float("SHORT_DELTA", 0.30)
 DELTA_TOLERANCE = _env_float("DELTA_TOLERANCE", 0.05)
 STRANGLE_PUT_DELTA = _env_float("STRANGLE_PUT_DELTA", 0.30)
 STRANGLE_CALL_DELTA = _env_float("STRANGLE_CALL_DELTA", 0.30)
-STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.15)  # keep strikes within ±15% of spot
+STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.20)  # keep strikes within ±20% of spot price
 
 # ═════════════════════════════════════════════════════════════════════
 # Spark
