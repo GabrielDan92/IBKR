@@ -27,6 +27,22 @@ st.set_page_config(
 # ── helpers ──────────────────────────────────────────────────────────
 
 
+def _pct_cols(*names: str) -> dict:
+    """Return a column_config dict that formats columns as '12.34%'."""
+    return {
+        name: st.column_config.NumberColumn(format="%.2f%%")
+        for name in names
+    }
+
+
+def _dollar_cols(*names: str) -> dict:
+    """Return a column_config dict that formats columns as '$1,234.56'."""
+    return {
+        name: st.column_config.NumberColumn(format="$%.2f")
+        for name in names
+    }
+
+
 @st.cache_data(ttl=60)
 def load_parquet(path: str) -> pd.DataFrame | None:
     """Load a Parquet directory into a Pandas DataFrame, or None if missing."""
@@ -58,7 +74,7 @@ if chain_df is not None and not chain_df.empty:
     )
 
     min_spread_ratio = st.sidebar.slider(
-        "Min spread ratio", 0.0, 1.0, 0.0, 0.01
+        "Min spread ratio (%)", 0.0, 100.0, 0.0, 0.5
     )
 else:
     selected_symbols = []
@@ -103,6 +119,18 @@ with tab_spreads:
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
             hide_index=True,
+            column_config={
+                **_pct_cols(
+                    "spread_ratio", "roc",
+                    "pct_to_short_strike", "pct_to_breakeven",
+                ),
+                **_dollar_cols(
+                    "short_strike", "long_strike",
+                    "short_mid", "long_mid", "credit",
+                    "width", "max_profit", "max_loss",
+                    "breakeven", "underlying_price",
+                ),
+            },
         )
         st.caption(f"{len(filtered)} spreads shown")
     else:
@@ -118,6 +146,21 @@ with tab_condors:
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
             hide_index=True,
+            column_config={
+                **_pct_cols(
+                    "spread_ratio", "roc",
+                    "pct_to_lower_breakeven", "pct_to_upper_breakeven",
+                ),
+                **_dollar_cols(
+                    "put_short_strike", "put_long_strike",
+                    "call_short_strike", "call_long_strike",
+                    "put_credit", "call_credit", "total_credit",
+                    "put_width", "call_width",
+                    "max_profit", "max_loss",
+                    "lower_breakeven", "upper_breakeven",
+                    "underlying_price",
+                ),
+            },
         )
         st.caption(f"{len(filtered)} iron condors shown")
     else:
@@ -133,6 +176,18 @@ with tab_strangles:
             filtered.sort_values("total_premium", ascending=False),
             use_container_width=True,
             hide_index=True,
+            column_config={
+                **_pct_cols(
+                    "pct_to_put_strike", "pct_to_call_strike",
+                    "pct_to_lower_breakeven", "pct_to_upper_breakeven",
+                ),
+                **_dollar_cols(
+                    "put_strike", "call_strike",
+                    "put_mid", "call_mid", "total_premium",
+                    "lower_breakeven", "upper_breakeven",
+                    "breakeven_width", "underlying_price",
+                ),
+            },
         )
         st.caption(f"{len(filtered)} strangles shown")
     else:

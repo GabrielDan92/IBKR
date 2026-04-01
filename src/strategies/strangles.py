@@ -20,77 +20,49 @@ import logging
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
-from config.constants import DELTA_TOLERANCE, STRANGLE_CALL_DELTA, STRANGLE_PUT_DELTA
-
 logger = logging.getLogger(__name__)
 
 
 def calculate_strangles(
     chain_df: DataFrame,
-    *,
-    put_delta: float = STRANGLE_PUT_DELTA,
-    call_delta: float = STRANGLE_CALL_DELTA,
-    delta_tolerance: float = DELTA_TOLERANCE,
 ) -> DataFrame:
     """
     Pair OTM puts with OTM calls to form short strangles.
 
     Logic
     -----
-    1. **Leg selection** — OTM puts with ``|delta|`` near ``put_delta``
-       and OTM calls with ``|delta|`` near ``call_delta``.
-    2. **Self-join** — pair every qualifying put with every qualifying
-       call on the same symbol and expiration.
+    1. **Leg selection** — all OTM puts and all OTM calls with a valid bid.
+    2. **Self-join** — pair every put with every call on the same symbol
+       and expiration.
     3. **Metrics** — total premium, upper / lower breakevens, %
        distance to strikes and breakevens, aggregate Greeks.
-    4. **Ranking** — ordered by ``total_premium DESC`` (largest
-       premium collected first).
+    4. **Ranking** — ordered by ``total_premium DESC``.
 
     Parameters
     ----------
     chain_df:
         Raw option-chain DataFrame.
-    put_delta:
-        Target absolute delta for the put leg.
-    call_delta:
-        Target absolute delta for the call leg.
-    delta_tolerance:
-        ± window around the target deltas.
 
     Returns
     -------
     DataFrame
         One row per strangle combination with computed metrics.
     """
-    chain_with_delta = chain_df.filter(
-        F.col("delta").isNotNull() & F.col("bid").isNotNull()
-    )
+    valid = chain_df.filter(F.col("mid").isNotNull())
 
-    # ── put legs (OTM puts have negative delta) ─────────────────────
+    # ── put legs (OTM puts) ─────────────────────────────────────
     put_legs = (
-        chain_with_delta
+        valid
         .filter(F.col("right") == "P")
-        .filter(F.col("strike") < F.col("underlying_price"))  # OTM
-        .filter(
-            F.abs(F.col("delta")).between(
-                put_delta - delta_tolerance,
-                put_delta + delta_tolerance,
-            )
-        )
+        .filter(F.col("strike") < F.col("underlying_price"))
         .alias("p")
     )
 
-    # ── call legs (OTM calls have positive delta) ───────────────────
+    # ── call legs (OTM calls) ───────────────────────────────────
     call_legs = (
-        chain_with_delta
+        valid
         .filter(F.col("right") == "C")
-        .filter(F.col("strike") > F.col("underlying_price"))  # OTM
-        .filter(
-            F.abs(F.col("delta")).between(
-                call_delta - delta_tolerance,
-                call_delta + delta_tolerance,
-            )
-        )
+        .filter(F.col("strike") > F.col("underlying_price"))
         .alias("c")
     )
 
@@ -103,26 +75,26 @@ def calculate_strangles(
     strangles = put_legs.join(call_legs, on=join_cond, how="inner")
 
     # ── metrics ──────────────────────────────────────────────────────
-    total_premium = F.col("p.bid") + F.col("c.bid")
+    total_premium = F.col("p.mid") + F.col("c.mid")
     lower_be = F.col("p.strike") - total_premium
     upper_be = F.col("c.strike") + total_premium
     breakeven_width = upper_be - lower_be
 
-    pct_to_put_strike = F.abs(
+    pct_to_put_strike = (F.abs(
         F.col("p.underlying_price") - F.col("p.strike")
-    ) / F.col("p.underlying_price")
+    ) / F.col("p.underlying_price")) * 100
 
-    pct_to_call_strike = F.abs(
+    pct_to_call_strike = (F.abs(
         F.col("c.underlying_price") - F.col("c.strike")
-    ) / F.col("c.underlying_price")
+    ) / F.col("c.underlying_price")) * 100
 
-    pct_to_lower_be = F.abs(
+    pct_to_lower_be = (F.abs(
         F.col("p.underlying_price") - lower_be
-    ) / F.col("p.underlying_price")
+    ) / F.col("p.underlying_price")) * 100
 
-    pct_to_upper_be = F.abs(
+    pct_to_upper_be = (F.abs(
         F.col("c.underlying_price") - upper_be
-    ) / F.col("c.underlying_price")
+    ) / F.col("c.underlying_price")) * 100
 
     result = (
         strangles
@@ -131,8 +103,8 @@ def calculate_strangles(
             F.col("p.expiration").alias("expiration"),
             F.col("p.strike").alias("put_strike"),
             F.col("c.strike").alias("call_strike"),
-            F.col("p.bid").alias("put_bid"),
-            F.col("c.bid").alias("call_bid"),
+            F.col("p.mid").alias("put_mid"),
+            F.col("c.mid").alias("call_mid"),
             total_premium.alias("total_premium"),
             lower_be.alias("lower_breakeven"),
             upper_be.alias("upper_breakeven"),
