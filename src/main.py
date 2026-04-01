@@ -29,7 +29,10 @@ from config.constants import (
 from src.ibkr.client import IBKRClient
 from src.spark.schemas import OPTION_CHAIN_SCHEMA
 from src.spark.session import SparkSessionFactory
-from src.strategies.spreads import calculate_iron_condors, calculate_spreads
+
+from src.strategies.analytics import calculate_expected_move, calculate_max_pain
+from src.strategies.calendars import calculate_calendars
+from src.strategies.spreads import calculate_iron_butterflies, calculate_iron_condors, calculate_spreads
 from src.strategies.strangles import calculate_strangles
 
 logging.basicConfig(
@@ -103,6 +106,33 @@ async def run() -> None:
         strangles_path = os.path.join(OUTPUT_DIR, "strangles")
         strangles_df.write.mode("overwrite").parquet(strangles_path)
         logger.info("Strangles written to %s", strangles_path)
+
+        # ── 7. Iron butterflies ─────────────────────────────────────
+        logger.info("Calculating iron butterflies …")
+        butterflies_df = calculate_iron_butterflies(chain_df)
+        butterflies_path = os.path.join(OUTPUT_DIR, "iron_butterflies")
+        butterflies_df.write.mode("overwrite").parquet(butterflies_path)
+        logger.info("Iron butterflies written to %s", butterflies_path)
+
+        # ── 8. Calendar spreads ─────────────────────────────────────
+        logger.info("Calculating calendar spreads …")
+        calendars_df = calculate_calendars(chain_df)
+        calendars_path = os.path.join(OUTPUT_DIR, "calendars")
+        calendars_df.write.mode("overwrite").parquet(calendars_path)
+        logger.info("Calendar spreads written to %s", calendars_path)
+
+        # ── 9. Analytics: expected move + max pain ──────────────────
+        logger.info("Calculating expected move …")
+        em_df = calculate_expected_move(chain_df)
+        em_path = os.path.join(OUTPUT_DIR, "expected_move")
+        em_df.write.mode("overwrite").parquet(em_path)
+        logger.info("Expected move written to %s", em_path)
+
+        logger.info("Calculating max pain …")
+        mp_df = calculate_max_pain(chain_df)
+        mp_path = os.path.join(OUTPUT_DIR, "max_pain")
+        mp_df.write.mode("overwrite").parquet(mp_path)
+        logger.info("Max pain written to %s", mp_path)
 
         logger.info("Pipeline complete ✓")
 
