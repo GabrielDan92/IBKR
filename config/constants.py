@@ -37,7 +37,7 @@ def _env_list(key: str, default: list[str]) -> list[str]:
 # IB Gateway connection
 # ═════════════════════════════════════════════════════════════════════
 IB_GATEWAY_HOST = _env("IB_GATEWAY_HOST", "ib-gateway")
-IB_GATEWAY_PORT = _env_int("IB_GATEWAY_PORT", 4003)
+IB_GATEWAY_PORT = _env_int("IB_GATEWAY_PORT", 4004)
 IB_CLIENT_ID = _env_int("IB_CLIENT_ID", 1)
 
 # ═════════════════════════════════════════════════════════════════════
@@ -45,7 +45,7 @@ IB_CLIENT_ID = _env_int("IB_CLIENT_ID", 1)
 # ═════════════════════════════════════════════════════════════════════
 DEFAULT_EXCHANGE = "SMART"
 DEFAULT_CURRENCY = "USD"
-MARKET_DATA_TYPE = 1  # 1 = live, 3 = delayed, 4 = delayed-frozen
+MARKET_DATA_TYPE = _env_int("MARKET_DATA_TYPE", 1)  # 1=live, 3=delayed, 4=delayed-frozen
 
 # Generic tick types requested with reqMktData:
 #   100 = option volume,  101 = open interest,  106 = implied volatility
@@ -70,6 +70,7 @@ SHORT_DELTA = _env_float("SHORT_DELTA", 0.30)
 DELTA_TOLERANCE = _env_float("DELTA_TOLERANCE", 0.05)
 STRANGLE_PUT_DELTA = _env_float("STRANGLE_PUT_DELTA", 0.30)
 STRANGLE_CALL_DELTA = _env_float("STRANGLE_CALL_DELTA", 0.30)
+STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.15)  # keep strikes within ±15% of spot
 
 # ═════════════════════════════════════════════════════════════════════
 # Spark

@@ -71,14 +71,35 @@ class IBKRClient(BaseMarketDataClient):
     async def connect(self) -> None:
         """Connect to IB Gateway."""
         logger.info("Connecting to IB Gateway at %s:%s (clientId=%s)", self._host, self._port, self._client_id)
-        await self._ib.connectAsync(
-            host=self._host,
-            port=self._port,
-            clientId=self._client_id,
-        )
-        # Request live (not delayed) market data
+        try:
+            await self._ib.connectAsync(
+                host=self._host,
+                port=self._port,
+                clientId=self._client_id,
+            )
+        except asyncio.TimeoutError:
+            raise ConnectionError(
+                f"Could not connect to IB Gateway at {self._host}:{self._port}. "
+                "Possible causes:\n"
+                "  • Wrong TWS_USERID or TWS_PASSWORD in .env\n"
+                "  • IB Gateway has not finished starting (try again in 30s)\n"
+                "  • Another client is already using clientId {self._client_id}\n"
+                "  • 2FA was not approved on your phone\n"
+                "Check ib-gateway logs: docker compose logs ib-gateway --tail 30"
+            ) from None
+        except ConnectionRefusedError:
+            raise ConnectionError(
+                f"Connection refused by IB Gateway at {self._host}:{self._port}. "
+                "The gateway is likely not running or failed to authenticate.\n"
+                "Check ib-gateway logs: docker compose logs ib-gateway --tail 30"
+            ) from None
+        # Set market-data type (1=live, 3=delayed, 4=delayed-frozen)
         self._ib.reqMarketDataType(MARKET_DATA_TYPE)
-        logger.info("Connected — server version %s", self._ib.client.serverVersion())
+        logger.info(
+            "Connected — server version %s, marketDataType=%s",
+            self._ib.client.serverVersion(),
+            MARKET_DATA_TYPE,
+        )
 
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway."""
@@ -114,14 +135,38 @@ class IBKRClient(BaseMarketDataClient):
             return []
         underlying = qualified[0]
 
-        # Snapshot of the underlying price (used for % calculations later)
+        # Snapshot of the underlying price (used for % calculations later).
+        # Delayed / frozen data may take a few seconds to arrive, so we
+        # poll in a loop instead of sleeping once.
         underlying_ticker = self._ib.reqMktData(underlying, "", False, False)
-        await asyncio.sleep(TICK_SETTLE_S)
-        underlying_price = _mid_price(underlying_ticker)
+
+        underlying_price: float | None = None
+        max_attempts = 10
+        for attempt in range(1, max_attempts + 1):
+            await asyncio.sleep(1.0)
+            underlying_price = _mid_price(underlying_ticker)
+            if underlying_price is not None:
+                break
+            logger.debug(
+                "%s: waiting for underlying price (attempt %d/%d) — "
+                "bid=%s ask=%s last=%s close=%s marketDataType=%s",
+                symbol, attempt, max_attempts,
+                underlying_ticker.bid, underlying_ticker.ask,
+                underlying_ticker.last, underlying_ticker.close,
+                underlying_ticker.marketDataType,
+            )
+
         self._ib.cancelMktData(underlying)
 
-        if underlying_price is None or math.isnan(underlying_price):
-            logger.warning("Could not obtain underlying price for %s", symbol)
+        if underlying_price is None:
+            logger.warning(
+                "Could not obtain underlying price for %s — "
+                "bid=%s ask=%s last=%s close=%s marketDataType=%s",
+                symbol,
+                underlying_ticker.bid, underlying_ticker.ask,
+                underlying_ticker.last, underlying_ticker.close,
+                underlying_ticker.marketDataType,
+            )
             return []
 
         logger.info("%s underlying price: %.2f", symbol, underlying_price)
@@ -161,10 +206,20 @@ class IBKRClient(BaseMarketDataClient):
 
         logger.info("%s: found %d expirations in DTE window", symbol, len(valid_expiries))
 
-        # Step 4 — build Option contracts
+        # Step 4 — build Option contracts (only strikes within range of spot)
+        from config.constants import STRIKE_RANGE_PCT
+
+        lo = underlying_price * (1 - STRIKE_RANGE_PCT)
+        hi = underlying_price * (1 + STRIKE_RANGE_PCT)
+        viable_strikes = sorted(s for s in chain.strikes if lo <= s <= hi)
+        logger.info(
+            "%s: %d strikes in [%.1f, %.1f] (of %d total)",
+            symbol, len(viable_strikes), lo, hi, len(chain.strikes),
+        )
+
         contracts: list[Option] = []
         for expiry in valid_expiries:
-            for strike in sorted(chain.strikes):
+            for strike in viable_strikes:
                 for right in ("C", "P"):
                     contracts.append(
                         Option(
@@ -225,7 +280,10 @@ class IBKRClient(BaseMarketDataClient):
         for i in range(0, len(contracts), batch_size):
             batch = contracts[i : i + batch_size]
             result = await self._ib.qualifyContractsAsync(*batch)
-            qualified.extend(c for c in result if c.conId > 0)
+            qualified.extend(
+                c for c in result
+                if c is not None and getattr(c, "conId", 0) > 0
+            )
             await asyncio.sleep(QUALIFY_PAUSE_S)
         return qualified
 
@@ -281,13 +339,25 @@ class IBKRClient(BaseMarketDataClient):
 
 
 def _mid_price(ticker: Ticker) -> float | None:
-    """Return the midpoint of bid/ask, falling back to last."""
-    bid = ticker.bid if ticker.bid not in (None, -1, float("nan")) else None
-    ask = ticker.ask if ticker.ask not in (None, -1, float("nan")) else None
+    """Return best available price: mid(bid,ask) → last → close → marketPrice."""
+    bid = _safe_float(ticker.bid)
+    ask = _safe_float(ticker.ask)
     if bid is not None and ask is not None:
         return (bid + ask) / 2.0
-    last = ticker.last if ticker.last not in (None, -1, float("nan")) else None
-    return last
+    last = _safe_float(ticker.last)
+    if last is not None:
+        return last
+    close = _safe_float(ticker.close)
+    if close is not None:
+        return close
+    # ib_async built-in fallback (last → mid → close)
+    try:
+        mp = ticker.marketPrice()
+        if mp is not None and math.isfinite(mp):
+            return mp
+    except (AttributeError, TypeError):
+        pass
+    return None
 
 
 def _safe_float(value: Any) -> float | None:

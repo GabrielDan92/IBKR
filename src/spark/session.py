@@ -21,42 +21,35 @@ from config.constants import (
 
 
 class SparkSessionFactory:
-    """Thin factory for building a pre-configured ``SparkSession``."""
+    """Singleton wrapper around ``SparkSession``.
+
+    The session is created once on first access via ``get()`` and reused
+    for every subsequent call.  Call ``stop()`` to tear it down.
+    """
+
+    _instance: SparkSession | None = None
 
     @classmethod
-    def create(
-        cls,
-        app_name: str = SPARK_APP_NAME,
-        master: str = SPARK_MASTER,
-        shuffle_partitions: int = SPARK_SHUFFLE_PARTITIONS,
-        driver_memory: str = SPARK_DRIVER_MEMORY,
-    ) -> SparkSession:
-        """
-        Build and return a ``SparkSession``.
+    def get(cls) -> SparkSession:
+        """Return the shared ``SparkSession``, creating it on first call."""
+        if cls._instance is None or cls._instance._jsc is None:
+            session = (
+                SparkSession.builder
+                .appName(SPARK_APP_NAME)
+                .master(SPARK_MASTER)
+                .config("spark.sql.shuffle.partitions", str(SPARK_SHUFFLE_PARTITIONS))
+                .config("spark.driver.memory", SPARK_DRIVER_MEMORY)
+                .config("spark.sql.session.timeZone", SPARK_TIMEZONE)
+                .config("spark.ui.showConsoleProgress", "false")
+                .getOrCreate()
+            )
+            session.sparkContext.setLogLevel(SPARK_LOG_LEVEL)
+            cls._instance = session
+        return cls._instance
 
-        Parameters
-        ----------
-        app_name:
-            Spark application name shown in the UI / logs.
-        master:
-            Spark master URL.  ``local[*]`` uses all cores in the
-            Docker container.
-        shuffle_partitions:
-            ``spark.sql.shuffle.partitions`` — tuned low for the small
-            option-chain datasets we work with.
-        driver_memory:
-            ``spark.driver.memory`` — the single-container setup is
-            driver-only, so this is the effective memory ceiling.
-        """
-        session = (
-            SparkSession.builder
-            .appName(app_name)
-            .master(master)
-            .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
-            .config("spark.driver.memory", driver_memory)
-            .config("spark.sql.session.timeZone", SPARK_TIMEZONE)
-            .config("spark.ui.showConsoleProgress", "false")
-            .getOrCreate()
-        )
-        session.sparkContext.setLogLevel(SPARK_LOG_LEVEL)
-        return session
+    @classmethod
+    def stop(cls) -> None:
+        """Stop the shared session if it exists."""
+        if cls._instance is not None:
+            cls._instance.stop()
+            cls._instance = None

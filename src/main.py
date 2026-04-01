@@ -25,10 +25,6 @@ from config.constants import (
     DTE_RANGE_DAYS,
     OUTPUT_DIR,
     SHORT_DELTA,
-    SPARK_APP_NAME,
-    SPARK_DRIVER_MEMORY,
-    SPARK_MASTER,
-    SPARK_SHUFFLE_PARTITIONS,
     STRANGLE_CALL_DELTA,
     STRANGLE_PUT_DELTA,
     SYMBOLS,
@@ -58,7 +54,6 @@ async def run() -> None:
 
     # ── 1. Fetch option chain data from IBKR ────────────────────────
     client = IBKRClient()
-    spark = None
 
     try:
         await client.connect()
@@ -75,13 +70,8 @@ async def run() -> None:
 
         logger.info("Fetched %d option rows across all symbols", len(raw_data))
 
-        # ── 2. Build Spark DataFrame ────────────────────────────────
-        spark = SparkSessionFactory.create(
-            app_name=SPARK_APP_NAME,
-            master=SPARK_MASTER,
-            shuffle_partitions=SPARK_SHUFFLE_PARTITIONS,
-            driver_memory=SPARK_DRIVER_MEMORY,
-        )
+        # ── 2. Build Spark DataFrame ──
+        spark = SparkSessionFactory.get()
 
         chain_df = spark.createDataFrame(raw_data, schema=OPTION_CHAIN_SCHEMA)
         chain_df.cache()
@@ -151,13 +141,15 @@ async def run() -> None:
 
         logger.info("Pipeline complete ✓")
 
+    except ConnectionError as e:
+        logger.error(str(e))
+        return
     except Exception:
         logger.exception("Pipeline failed")
         raise
     finally:
         await client.disconnect()
-        if spark is not None:
-            spark.stop()
+        SparkSessionFactory.stop()
 
 
 def main() -> None:

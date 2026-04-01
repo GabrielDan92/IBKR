@@ -30,7 +30,7 @@ services:
     networks:
       - trader
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "4003"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/4004'"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -49,9 +49,12 @@ services:
     environment:
       # Override: inside Docker the gateway is reached by service name
       IB_GATEWAY_HOST: ib-gateway
+      IB_GATEWAY_PORT: "4004"
       OUTPUT_DIR: /opt/app/data
     volumes:
       - results:/opt/app/data
+      - ../src:/opt/app/src
+      - ../config:/opt/app/config
     networks:
       - trader
 
@@ -71,6 +74,8 @@ services:
       - "127.0.0.1:8501:8501"
     volumes:
       - results:/opt/app/data:ro
+      - ../src/dashboard:/opt/app/src/dashboard
+      - ../config:/opt/app/config
     networks:
       - trader
     restart: unless-stopped

@@ -21,8 +21,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /opt/app/requirements.txt
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /opt/app/requirements.txt
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir -r /opt/app/requirements.txt
 
 COPY src/    /opt/app/src/
 COPY config/ /opt/app/config/
@@ -32,7 +32,7 @@ WORKDIR /opt/app
 ENV PYTHONPATH="/opt/app"
 ENV OUTPUT_DIR="/opt/app/data"
 
-ENTRYPOINT ["python", "/opt/app/src/main.py"]
+ENTRYPOINT ["python3", "/opt/app/src/main.py"]
 
 # ═════════════════════════════════════════════════════════════════════
 # Stage: dashboard  — Streamlit viewer (no Java / Spark needed)
