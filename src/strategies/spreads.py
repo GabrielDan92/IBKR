@@ -128,6 +128,9 @@ def calculate_spreads(
     pct_to_short_strike = (F.abs(
         F.col("s.underlying_price") - F.col("s.strike")
     ) / F.col("s.underlying_price")) * 100
+    pct_to_long_strike = (F.abs(
+        F.col("s.underlying_price") - F.col("l.strike")
+    ) / F.col("s.underlying_price")) * 100
 
     pct_to_breakeven = (F.abs(
         F.col("s.underlying_price") - breakeven
@@ -160,10 +163,12 @@ def calculate_spreads(
             F.col("s.right").alias("right"),
             strategy_label.alias("strategy"),
             F.col("s.strike").alias("short_strike"),
-            F.col("l.strike").alias("long_strike"),
+            pct_to_short_strike.alias("pct_to_short_strike"),
             F.col("s.mid").alias("short_mid"),
-            F.col("l.mid").alias("long_mid"),
             F.col("s.delta").alias("short_delta"),
+            F.col("l.strike").alias("long_strike"),
+            pct_to_long_strike.alias("pct_to_long_strike"),
+            F.col("l.mid").alias("long_mid"),
             F.col("l.delta").alias("long_delta"),
             (net_premium * 100).alias("credit"),
             width.alias("width"),
@@ -171,11 +176,10 @@ def calculate_spreads(
             max_loss.alias("max_loss"),
             spread_ratio.alias("spread_ratio"),
             credit_yield.alias("credit_yield"),
-            roc.alias("ROC"),
+            roc.alias("roc"),
             breakeven.alias("breakeven"),
-            F.col("s.underlying_price").alias("underlying_price"),
-            pct_to_short_strike.alias("pct_to_short_strike"),
             pct_to_breakeven.alias("pct_to_breakeven"),
+            F.col("s.underlying_price").alias("underlying_price"),
             F.col("s.dte").alias("dte"),
             # Net Greeks (short − long because we *sell* the short leg)
             (F.col("s.delta") - F.col("l.delta")).alias("net_delta"),
@@ -185,6 +189,23 @@ def calculate_spreads(
         )
         .filter(F.col("max_profit") > 0)   # valid spreads only
         .filter(F.col("max_loss") > 0)
+    )
+
+    # ── deduplicate mirror pairs ─────────────────────────────────────
+    # When both legs are OTM, the pair (A, B) appears twice with roles
+    # swapped — once as credit and once as debit.  Keep only one row
+    # per unique pair of contracts, preferring the credit version.
+    dedup_window = Window.partitionBy(
+        "symbol", "expiration", "right",
+        F.least("short_strike", "long_strike"),
+        F.greatest("short_strike", "long_strike"),
+    ).orderBy(F.col("credit").desc())   # credit version wins
+
+    result = (
+        result
+        .withColumn("_dedup_rank", F.row_number().over(dedup_window))
+        .filter(F.col("_dedup_rank") == 1)
+        .drop("_dedup_rank")
         .orderBy(F.col("spread_ratio").desc())
     )
 

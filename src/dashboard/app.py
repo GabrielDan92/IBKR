@@ -27,20 +27,34 @@ st.set_page_config(
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-def _pct_cols(*names: str) -> dict:
-    """Return a column_config dict that formats columns as '12.34%'."""
-    return {
+def _pct_cols(*names: str, **labeled: str) -> dict:
+    """Return column_config that formats columns as '12.34%'.
+
+    Positional args use the column name as-is.
+    Keyword args map column_name="Display Label".
+    """
+    cfg: dict = {
         name: st.column_config.NumberColumn(format="%.2f%%")
         for name in names
     }
+    for col_name, label in labeled.items():
+        cfg[col_name] = st.column_config.NumberColumn(label=label, format="%.2f%%")
+    return cfg
 
 
-def _dollar_cols(*names: str) -> dict:
-    """Return a column_config dict that formats columns as '$1,234.56'."""
-    return {
+def _dollar_cols(*names: str, **labeled: str) -> dict:
+    """Return column_config that formats columns as '$1,234.56'.
+
+    Positional args use the column name as-is.
+    Keyword args map column_name="Display Label".
+    """
+    cfg: dict = {
         name: st.column_config.NumberColumn(format="$%.2f")
         for name in names
     }
+    for col_name, label in labeled.items():
+        cfg[col_name] = st.column_config.NumberColumn(label=label, format="$%.2f")
+    return cfg
 
 
 @st.cache_data(ttl=60)
@@ -127,17 +141,37 @@ with tab_spreads:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "right": None,  # hide — info is already in strategy label
+                "right": None,
+                "symbol": "Symbol",
+                "expiration": "Expiration",
+                "strategy": "Strategy",
+                "dte": "DTE",
                 **_pct_cols(
-                    "spread_ratio", "credit_yield", "roc",
-                    "pct_to_short_strike", "pct_to_breakeven",
+                    spread_ratio="Spread Ratio",
+                    credit_yield="Credit Yield",
+                    roc="ROC",
+                    pct_to_short_strike="% to Short Strike",
+                    pct_to_long_strike="% to Long Strike",
+                    pct_to_breakeven="% to Breakeven",
                 ),
                 **_dollar_cols(
-                    "short_strike", "long_strike",
-                    "short_mid", "long_mid", "credit",
-                    "width", "max_profit", "max_loss",
-                    "breakeven", "underlying_price",
+                    short_strike="Short Strike",
+                    long_strike="Long Strike",
+                    short_mid="Short Price (Mid)",
+                    long_mid="Long Price (Mid)",
+                    credit="Credit",
+                    width="Width",
+                    max_profit="Max Profit",
+                    max_loss="Max Loss",
+                    breakeven="Breakeven",
+                    underlying_price="Underlying Price",
                 ),
+                "short_delta": st.column_config.NumberColumn(label="Short Delta", format="%.4f"),
+                "long_delta": st.column_config.NumberColumn(label="Long Delta", format="%.4f"),
+                "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
+                "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
+                "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
+                "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
             },
         )
         st.caption(f"{len(filtered)} spreads shown")
@@ -155,19 +189,36 @@ with tab_condors:
             use_container_width=True,
             hide_index=True,
             column_config={
+                "symbol": "Symbol",
+                "expiration": "Expiration",
+                "dte": "DTE",
                 **_pct_cols(
-                    "spread_ratio", "credit_yield", "roc",
-                    "pct_to_lower_breakeven", "pct_to_upper_breakeven",
+                    spread_ratio="Spread Ratio",
+                    credit_yield="Credit Yield",
+                    roc="ROC",
+                    pct_to_lower_breakeven="% to Lower BE",
+                    pct_to_upper_breakeven="% to Upper BE",
                 ),
                 **_dollar_cols(
-                    "put_short_strike", "put_long_strike",
-                    "call_short_strike", "call_long_strike",
-                    "put_credit", "call_credit", "total_credit",
-                    "put_width", "call_width",
-                    "max_profit", "max_loss",
-                    "lower_breakeven", "upper_breakeven",
-                    "underlying_price",
+                    put_short_strike="Put Short Strike",
+                    put_long_strike="Put Long Strike",
+                    call_short_strike="Call Short Strike",
+                    call_long_strike="Call Long Strike",
+                    put_credit="Put Credit",
+                    call_credit="Call Credit",
+                    total_credit="Total Credit",
+                    put_width="Put Width",
+                    call_width="Call Width",
+                    max_profit="Max Profit",
+                    max_loss="Max Loss",
+                    lower_breakeven="Lower Breakeven",
+                    upper_breakeven="Upper Breakeven",
+                    underlying_price="Underlying Price",
                 ),
+                "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
+                "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
+                "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
+                "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
             },
         )
         st.caption(f"{len(filtered)} iron condors shown")
@@ -185,17 +236,35 @@ with tab_strangles:
             use_container_width=True,
             hide_index=True,
             column_config={
+                "symbol": "Symbol",
+                "expiration": "Expiration",
+                "dte": "DTE",
                 **_pct_cols(
-                    "roc",
-                    "pct_to_put_strike", "pct_to_call_strike",
-                    "pct_to_lower_breakeven", "pct_to_upper_breakeven",
+                    roc="ROC",
+                    pct_to_put_strike="% to Put Strike",
+                    pct_to_call_strike="% to Call Strike",
+                    pct_to_lower_breakeven="% to Lower BE",
+                    pct_to_upper_breakeven="% to Upper BE",
                 ),
                 **_dollar_cols(
-                    "put_strike", "call_strike",
-                    "put_mid", "call_mid", "total_premium",
-                    "lower_breakeven", "upper_breakeven",
-                    "breakeven_width", "underlying_price",
+                    put_strike="Put Strike",
+                    call_strike="Call Strike",
+                    put_mid="Put Price (Mid)",
+                    call_mid="Call Price (Mid)",
+                    total_premium="Total Premium",
+                    lower_breakeven="Lower Breakeven",
+                    upper_breakeven="Upper Breakeven",
+                    breakeven_width="Breakeven Width",
+                    underlying_price="Underlying Price",
                 ),
+                "put_delta": st.column_config.NumberColumn(label="Put Delta", format="%.4f"),
+                "call_delta": st.column_config.NumberColumn(label="Call Delta", format="%.4f"),
+                "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
+                "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
+                "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
+                "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
+                "put_implied_vol": st.column_config.NumberColumn(label="Put IV", format="%.4f"),
+                "call_implied_vol": st.column_config.NumberColumn(label="Call IV", format="%.4f"),
             },
         )
         st.caption(f"{len(filtered)} strangles shown")

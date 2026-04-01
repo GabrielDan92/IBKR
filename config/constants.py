@@ -70,7 +70,7 @@ SHORT_DELTA = _env_float("SHORT_DELTA", 0.30)
 DELTA_TOLERANCE = _env_float("DELTA_TOLERANCE", 0.05)
 STRANGLE_PUT_DELTA = _env_float("STRANGLE_PUT_DELTA", 0.30)
 STRANGLE_CALL_DELTA = _env_float("STRANGLE_CALL_DELTA", 0.30)
-STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.15)  # keep strikes within ±15% of spot
+STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.20)  # keep strikes within ±20% of spot price
 
 # ═════════════════════════════════════════════════════════════════════
 # Spark
