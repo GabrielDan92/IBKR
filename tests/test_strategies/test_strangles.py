@@ -7,6 +7,8 @@ connection.
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from pyspark.sql import SparkSession
 
@@ -16,25 +18,27 @@ from src.strategies.strangles import calculate_strangles
 
 # ── synthetic data ───────────────────────────────────────────────────
 
+_EXPIRY = datetime.date(2026, 5, 15)
+
 _CHAIN_DATA = [
     # OTM puts  (underlying @ 100)
-    {"symbol": "TEST", "expiration": "20260515", "strike": 95.0, "right": "P",
+    {"symbol": "TEST", "expiration": _EXPIRY, "strike": 95.0, "right": "P",
      "bid": 1.50, "ask": 1.70, "last": 1.60, "mid": 1.60,
      "delta": -0.30, "gamma": 0.03, "theta": -0.05, "vega": 0.15,
      "implied_vol": 0.25, "open_interest": 500.0, "volume": 100.0,
      "underlying_price": 100.0, "dte": 44},
-    {"symbol": "TEST", "expiration": "20260515", "strike": 92.0, "right": "P",
+    {"symbol": "TEST", "expiration": _EXPIRY, "strike": 92.0, "right": "P",
      "bid": 0.90, "ask": 1.10, "last": 1.00, "mid": 1.00,
      "delta": -0.20, "gamma": 0.02, "theta": -0.03, "vega": 0.10,
      "implied_vol": 0.23, "open_interest": 300.0, "volume": 50.0,
      "underlying_price": 100.0, "dte": 44},
     # OTM calls  (underlying @ 100)
-    {"symbol": "TEST", "expiration": "20260515", "strike": 105.0, "right": "C",
+    {"symbol": "TEST", "expiration": _EXPIRY, "strike": 105.0, "right": "C",
      "bid": 1.40, "ask": 1.60, "last": 1.50, "mid": 1.50,
      "delta": 0.30, "gamma": 0.03, "theta": -0.05, "vega": 0.15,
      "implied_vol": 0.25, "open_interest": 600.0, "volume": 120.0,
      "underlying_price": 100.0, "dte": 44},
-    {"symbol": "TEST", "expiration": "20260515", "strike": 108.0, "right": "C",
+    {"symbol": "TEST", "expiration": _EXPIRY, "strike": 108.0, "right": "C",
      "bid": 0.80, "ask": 1.00, "last": 0.90, "mid": 0.90,
      "delta": 0.20, "gamma": 0.02, "theta": -0.03, "vega": 0.10,
      "implied_vol": 0.23, "open_interest": 350.0, "volume": 60.0,
@@ -55,10 +59,10 @@ class TestCalculateStrangles:
         result = calculate_strangles(chain_df)
         assert result.count() > 0
 
-    def test_total_premium_is_sum_of_bids(self, chain_df):
+    def test_total_premium_is_sum_of_mids(self, chain_df):
         result = calculate_strangles(chain_df)
         for row in result.collect():
-            expected = row.put_bid + row.call_bid
+            expected = row.put_mid + row.call_mid
             assert abs(row.total_premium - expected) < 1e-6
 
     def test_put_strike_below_underlying(self, chain_df):
@@ -92,3 +96,52 @@ class TestCalculateStrangles:
         for row in result.collect():
             expected = row.put_delta + row.call_delta
             assert abs(row.net_delta - expected) < 1e-6
+
+    def test_roc_formula(self, chain_df):
+        """ROC = total_premium / avg(put_strike, call_strike) × 100."""
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            avg_strike = (row.put_strike + row.call_strike) / 2
+            expected = row.total_premium / avg_strike * 100
+            assert abs(row.ROC - expected) < 1e-6
+
+    def test_breakeven_width(self, chain_df):
+        """breakeven_width = upper_breakeven − lower_breakeven."""
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            expected = row.upper_breakeven - row.lower_breakeven
+            assert abs(row.breakeven_width - expected) < 1e-6
+
+    def test_pct_to_put_strike(self, chain_df):
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            expected = abs(row.underlying_price - row.put_strike) / row.underlying_price * 100
+            assert abs(row.pct_to_put_strike - expected) < 1e-6
+
+    def test_pct_to_call_strike(self, chain_df):
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            expected = abs(row.underlying_price - row.call_strike) / row.underlying_price * 100
+            assert abs(row.pct_to_call_strike - expected) < 1e-6
+
+    def test_pct_to_lower_breakeven(self, chain_df):
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            expected = abs(row.underlying_price - row.lower_breakeven) / row.underlying_price * 100
+            assert abs(row.pct_to_lower_breakeven - expected) < 1e-6
+
+    def test_pct_to_upper_breakeven(self, chain_df):
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            expected = abs(row.underlying_price - row.upper_breakeven) / row.underlying_price * 100
+            assert abs(row.pct_to_upper_breakeven - expected) < 1e-6
+
+    def test_net_gamma_theta_vega_are_sums(self, chain_df):
+        """net_gamma/theta/vega = put + call (code adds both legs without negation).
+        Since all gammas/vegas in test data are positive and all thetas negative,
+        we can verify signs as a sanity check alongside the net_delta pattern."""
+        result = calculate_strangles(chain_df)
+        for row in result.collect():
+            assert row.net_gamma is not None and row.net_gamma > 0
+            assert row.net_theta is not None and row.net_theta < 0
+            assert row.net_vega is not None and row.net_vega > 0

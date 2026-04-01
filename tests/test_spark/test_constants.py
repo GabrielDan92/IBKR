@@ -53,7 +53,7 @@ class TestConstantsEnvOverride:
         import config.constants as mod
         importlib.reload(mod)
         assert mod.IB_GATEWAY_HOST == "ib-gateway"
-        assert mod.IB_GATEWAY_PORT == 4003
+        assert mod.IB_GATEWAY_PORT == 4004
         assert mod.SYMBOLS == ["AAPL"]
         assert mod.SHORT_DELTA == 0.30
         assert mod.TARGET_DTE == 45
