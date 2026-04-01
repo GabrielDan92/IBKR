@@ -23,6 +23,10 @@ services:
     image: ghcr.io/gnzsnz/ib-gateway:stable
     restart: unless-stopped
     env_file: ../.env
+    environment:
+      # Credentials read from OS environment (set in ~/.zshrc)
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
     ports:
       - "127.0.0.1:4001:4003"   # live trading API
       - "127.0.0.1:4002:4004"   # paper trading API
