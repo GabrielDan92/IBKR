@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "ibkr-options"
+version = "0.1.0"
+description = "IBKR options chain analysis with PySpark"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "ib_async>=2.1.0",
+    "pyspark==4.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+dashboard = [
+    "streamlit>=1.30",
+    "pyarrow>=14.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "config*"]

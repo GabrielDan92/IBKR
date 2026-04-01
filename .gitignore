@@ -1,0 +1,43 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# PySpark
+*.jar
+metastore_db/
+spark-warehouse/
+derby.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output data
+data/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+.env.example

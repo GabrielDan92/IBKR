@@ -1,0 +1,5 @@
+ib_async>=2.1.0
+pyspark==4.1.1
+streamlit>=1.30
+pyarrow>=14.0
+pandas>=2.0

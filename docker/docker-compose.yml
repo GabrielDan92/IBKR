@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────
+# IBKR Options Pipeline — Docker Compose
+#
+# Services
+#   ib-gateway   IB Gateway + IBC (automated login, 2FA handling)
+#   spark-app    PySpark pipeline that pulls chains & computes strategies
+#   dashboard    Streamlit dashboard reading Parquet results
+#
+# Usage
+#   cp .env.example .env               # fill in TWS_USERID / TWS_PASSWORD
+#   cd docker && docker compose up     # starts everything
+#   (approve 2FA on your phone when prompted)
+#
+# The startup order is enforced by depends_on + healthchecks:
+#   ib-gateway starts → becomes healthy → spark-app runs pipeline →
+#   exits successfully → dashboard starts and stays up.
+# ─────────────────────────────────────────────────────────────────────
+name: ibkr-options
+
+services:
+  # ── IB Gateway (community-standard image with IBC) ────────────────
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    restart: unless-stopped
+    env_file: ../.env
+    ports:
+      - "127.0.0.1:4001:4003"   # live trading API
+      - "127.0.0.1:4002:4004"   # paper trading API
+      - "127.0.0.1:5900:5900"   # VNC (if enabled above)
+    networks:
+      - trader
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4003"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  # ── Spark application ─────────────────────────────────────────────
+  spark-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: app
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
+    env_file: ../.env
+    environment:
+      # Override: inside Docker the gateway is reached by service name
+      IB_GATEWAY_HOST: ib-gateway
+      OUTPUT_DIR: /opt/app/data
+    volumes:
+      - results:/opt/app/data
+    networks:
+      - trader
+
+  # ── Dashboard (Streamlit) ──────────────────────────────────────────
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dashboard
+    depends_on:
+      spark-app:
+        condition: service_completed_successfully
+    env_file: ../.env
+    environment:
+      OUTPUT_DIR: /opt/app/data
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - results:/opt/app/data:ro
+    networks:
+      - trader
+    restart: unless-stopped
+
+networks:
+  trader:
+    driver: bridge
+
+volumes:
+  results:
