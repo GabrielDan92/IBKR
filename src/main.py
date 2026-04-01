@@ -37,6 +37,9 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+# Suppress noisy ib_async messages (subscription warnings, unknown contracts)
+logging.getLogger("ib_async.wrapper").setLevel(logging.CRITICAL)
+logging.getLogger("ib_async.ib").setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
 

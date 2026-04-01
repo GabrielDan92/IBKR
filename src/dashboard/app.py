@@ -13,7 +13,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-from config.constants import DASHBOARD_PORT, OUTPUT_DIR
+from config.constants import OUTPUT_DIR
 
 DATA_DIR = OUTPUT_DIR
 
@@ -57,7 +57,7 @@ def load_parquet(path: str) -> pd.DataFrame | None:
 
 # ── sidebar filters ──────────────────────────────────────────────────
 
-st.sidebar.title("🔧 Filters")
+st.sidebar.title("Filters")
 
 # Load chain to get unique symbols and expirations
 chain_df = load_parquet(os.path.join(DATA_DIR, "option_chain"))
@@ -74,7 +74,7 @@ if chain_df is not None and not chain_df.empty:
     )
 
     min_spread_ratio = st.sidebar.slider(
-        "Min spread ratio (%)", 0.0, 100.0, 0.0, 0.5
+        "Min spread ratio (%)", 0.0, 100.0, 25.0, 0.5
     )
 else:
     selected_symbols = []
@@ -95,7 +95,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── main content ─────────────────────────────────────────────────────
 
-st.title("📈 IBKR Options Strategy Scanner")
+st.title("IBKR Options Scanner")
 
 if chain_df is None:
     st.warning(
@@ -111,17 +111,25 @@ tab_spreads, tab_condors, tab_strangles, tab_chain = st.tabs(
 
 # ── Spreads ──────────────────────────────────────────────────────────
 with tab_spreads:
-    st.subheader("Credit / Debit Vertical Spreads")
+    st.subheader("Credit / Debit Spreads")
     spreads_df = load_parquet(os.path.join(DATA_DIR, "spreads"))
     if spreads_df is not None and not spreads_df.empty:
+        # Strategy filter (inside the tab so it only shows when data exists)
+        strategies = sorted(spreads_df["strategy"].unique())
+        selected_strategies = st.multiselect(
+            "Strategy", strategies, default=strategies, key="spread_strategy"
+        )
         filtered = apply_filters(spreads_df)
+        if selected_strategies:
+            filtered = filtered[filtered["strategy"].isin(selected_strategies)]
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
             hide_index=True,
             column_config={
+                "right": None,  # hide — info is already in strategy label
                 **_pct_cols(
-                    "spread_ratio", "roc",
+                    "spread_ratio", "credit_yield", "roc",
                     "pct_to_short_strike", "pct_to_breakeven",
                 ),
                 **_dollar_cols(
@@ -148,7 +156,7 @@ with tab_condors:
             hide_index=True,
             column_config={
                 **_pct_cols(
-                    "spread_ratio", "roc",
+                    "spread_ratio", "credit_yield", "roc",
                     "pct_to_lower_breakeven", "pct_to_upper_breakeven",
                 ),
                 **_dollar_cols(
@@ -178,6 +186,7 @@ with tab_strangles:
             hide_index=True,
             column_config={
                 **_pct_cols(
+                    "roc",
                     "pct_to_put_strike", "pct_to_call_strike",
                     "pct_to_lower_breakeven", "pct_to_upper_breakeven",
                 ),

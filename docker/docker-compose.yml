@@ -70,6 +70,7 @@ services:
     env_file: ../.env
     environment:
       OUTPUT_DIR: /opt/app/data
+      STREAMLIT_CONFIG_DIR: /opt/app/src/dashboard/.streamlit
     ports:
       - "127.0.0.1:8501:8501"
     volumes:

@@ -56,7 +56,7 @@ GENERIC_TICKS = "100,101,106"
 # ═════════════════════════════════════════════════════════════════════
 BATCH_SIZE = 45          # concurrent reqMktData calls (stay under 50 req/s)
 BATCH_PAUSE_S = 1.0      # seconds to sleep between batches
-TICK_SETTLE_S = 2.0      # seconds to wait for tick data to arrive
+TICK_SETTLE_S = 3.0      # seconds to wait for tick data to arrive
 QUALIFY_BATCH_SIZE = 100  # contracts per qualifyContractsAsync batch
 QUALIFY_PAUSE_S = 0.5    # seconds between qualify batches
 
