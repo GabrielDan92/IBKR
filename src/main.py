@@ -54,6 +54,10 @@ async def run() -> None:
         TARGET_DTE,
     )
 
+    # ── Wait for IB Gateway login to complete ──────────────────────
+    logger.info("Waiting 10 seconds for IB Gateway to fully authenticate…")
+    await asyncio.sleep(10)
+
     # ── 1. Fetch option chain data from IBKR ────────────────────────
     client = IBKRClient()
 
