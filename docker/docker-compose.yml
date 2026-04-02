@@ -20,11 +20,11 @@ name: ibkr-options
 services:
   # ── IB Gateway (community-standard image with IBC) ────────────────
   ib-gateway:
-    image: ghcr.io/gnzsnz/ib-gateway:stable
+    image: ghcr.io/gnzsnz/ib-gateway:10.45
     restart: unless-stopped
     env_file: ../.env
     environment:
-      # Credentials read from OS environment (set in ~/.zshrc)
+      # Credentials read from OS environment (set in ~/.zshrc) or W11 env variable
       TWS_USERID: ${TWS_USERID}
       TWS_PASSWORD: ${TWS_PASSWORD}
     ports:

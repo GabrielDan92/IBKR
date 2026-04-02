@@ -1,10 +1,11 @@
 """
-Centralised application configuration.
+Application configuration loader.
 
-Every tunable value lives here.  Values are read from environment
-variables at import time (injected by Docker Compose from ``.env``),
-falling back to sensible defaults.  This is the **single source of
-truth** — no other module should hard-code configuration values.
+All constants are defined in .env (source of truth).
+This module loads them with type conversion and sensible defaults.
+
+Usage:
+    from config.constants import IB_GATEWAY_HOST, TARGET_DTE
 """
 
 from __future__ import annotations
@@ -13,20 +14,22 @@ import os
 
 
 def _env(key: str, default: str) -> str:
-    """Read an env var, returning *default* if unset or empty."""
+    """Load env var, returning default if unset or empty."""
     return os.environ.get(key, "") or default
 
 
 def _env_int(key: str, default: int) -> int:
+    """Load env var as int with default."""
     return int(_env(key, str(default)))
 
 
 def _env_float(key: str, default: float) -> float:
+    """Load env var as float with default."""
     return float(_env(key, str(default)))
 
 
 def _env_list(key: str, default: list[str]) -> list[str]:
-    """Parse a comma-separated env var into a list of upper-cased strings."""
+    """Load comma-separated env var as upper-cased list."""
     raw = os.environ.get(key, "")
     if raw.strip():
         return [s.strip().upper() for s in raw.split(",") if s.strip()]
@@ -43,22 +46,19 @@ IB_CLIENT_ID = _env_int("IB_CLIENT_ID", 1)
 # ═════════════════════════════════════════════════════════════════════
 # Market data
 # ═════════════════════════════════════════════════════════════════════
-DEFAULT_EXCHANGE = "SMART"
-DEFAULT_CURRENCY = "USD"
-MARKET_DATA_TYPE = _env_int("MARKET_DATA_TYPE", 1)  # 1=live, 3=delayed, 4=delayed-frozen
-
-# Generic tick types requested with reqMktData:
-#   100 = option volume,  101 = open interest,  106 = implied volatility
-GENERIC_TICKS = "100,101,106"
+DEFAULT_EXCHANGE = _env("DEFAULT_EXCHANGE", "SMART")
+DEFAULT_CURRENCY = _env("DEFAULT_CURRENCY", "USD")
+MARKET_DATA_TYPE = _env_int("MARKET_DATA_TYPE", 3)  # 1=live, 3=delayed, 4=delayed-frozen
+GENERIC_TICKS = _env("GENERIC_TICKS", "100,101,106")  # volume, open interest, IV
 
 # ═════════════════════════════════════════════════════════════════════
 # IBKR rate-limiting / pacing
 # ═════════════════════════════════════════════════════════════════════
-BATCH_SIZE = 45          # concurrent reqMktData calls (stay under 50 req/s)
-BATCH_PAUSE_S = 1.0      # seconds to sleep between batches
-TICK_SETTLE_S = 3.0      # seconds to wait for tick data to arrive
-QUALIFY_BATCH_SIZE = 100  # contracts per qualifyContractsAsync batch
-QUALIFY_PAUSE_S = 0.5    # seconds between qualify batches
+BATCH_SIZE = _env_int("BATCH_SIZE", 45)
+BATCH_PAUSE_S = _env_float("BATCH_PAUSE_S", 1.0)
+TICK_SETTLE_S = _env_float("TICK_SETTLE_S", 3.0)
+QUALIFY_BATCH_SIZE = _env_int("QUALIFY_BATCH_SIZE", 100)
+QUALIFY_PAUSE_S = _env_float("QUALIFY_PAUSE_S", 0.5)
 
 # ═════════════════════════════════════════════════════════════════════
 # Strategy defaults
@@ -70,7 +70,7 @@ SHORT_DELTA = _env_float("SHORT_DELTA", 0.30)
 DELTA_TOLERANCE = _env_float("DELTA_TOLERANCE", 0.05)
 STRANGLE_PUT_DELTA = _env_float("STRANGLE_PUT_DELTA", 0.30)
 STRANGLE_CALL_DELTA = _env_float("STRANGLE_CALL_DELTA", 0.30)
-STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.20)  # keep strikes within ±20% of spot price
+STRIKE_RANGE_PCT = _env_float("STRIKE_RANGE_PCT", 0.20)
 
 # ═════════════════════════════════════════════════════════════════════
 # Spark
@@ -83,11 +83,7 @@ SPARK_TIMEZONE = _env("SPARK_TIMEZONE", "Europe/Bucharest")
 SPARK_LOG_LEVEL = _env("SPARK_LOG_LEVEL", "WARN")
 
 # ═════════════════════════════════════════════════════════════════════
-# Output
+# Output & Dashboard
 # ═════════════════════════════════════════════════════════════════════
 OUTPUT_DIR = _env("OUTPUT_DIR", "/opt/app/data")
-
-# ═════════════════════════════════════════════════════════════════════
-# Dashboard
-# ═════════════════════════════════════════════════════════════════════
 DASHBOARD_PORT = _env_int("DASHBOARD_PORT", 8501)

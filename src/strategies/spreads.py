@@ -162,6 +162,8 @@ def calculate_spreads(
             F.col("s.expiration").alias("expiration"),
             F.col("s.right").alias("right"),
             strategy_label.alias("strategy"),
+            F.col("s.underlying_price").alias("underlying_price"),
+            spread_ratio.alias("spread_ratio"),
             F.col("s.strike").alias("short_strike"),
             pct_to_short_strike.alias("pct_to_short_strike"),
             F.col("s.mid").alias("short_mid"),
@@ -174,12 +176,10 @@ def calculate_spreads(
             width.alias("width"),
             max_profit.alias("max_profit"),
             max_loss.alias("max_loss"),
-            spread_ratio.alias("spread_ratio"),
             credit_yield.alias("credit_yield"),
             roc.alias("roc"),
             breakeven.alias("breakeven"),
             pct_to_breakeven.alias("pct_to_breakeven"),
-            F.col("s.underlying_price").alias("underlying_price"),
             F.col("s.dte").alias("dte"),
             # Net Greeks (short − long because we *sell* the short leg)
             (F.col("s.delta") - F.col("l.delta")).alias("net_delta"),
@@ -313,4 +313,167 @@ def calculate_iron_condors(
     )
 
     logger.info("Generated %d iron condor combinations", result.count())
+    return result
+
+def calculate_iron_butterflies(
+    chain_df: DataFrame,
+) -> DataFrame:
+    """
+    Build iron butterflies for each symbol / expiration.
+
+    An iron butterfly = sell ATM straddle + buy OTM strangle wings,
+    where both short legs share the same ATM strike.  Only symmetric
+    wing widths (put_width == call_width) are kept.
+
+    Parameters
+    ----------
+    chain_df:
+        Raw option-chain DataFrame (``OPTION_CHAIN_SCHEMA``).
+
+    Returns
+    -------
+    DataFrame
+        One row per (symbol, expiration, ATM strike, wing width).
+    """
+    valid = chain_df.filter(F.col("mid").isNotNull())
+
+    # ── ATM strike per (symbol, expiration) ───────────────────────────
+    atm_window = Window.partitionBy("symbol", "expiration").orderBy(
+        F.abs(F.col("strike") - F.col("underlying_price"))
+    )
+    atm_strikes = (
+        valid.select("symbol", "expiration", "strike", "underlying_price")
+        .distinct()
+        .withColumn("_r", F.row_number().over(atm_window))
+        .filter(F.col("_r") == 1).drop("_r")
+        .select(
+            F.col("symbol").alias("atm_sym"),
+            F.col("expiration").alias("atm_exp"),
+            F.col("strike").alias("atm_strike"),
+        )
+    )
+
+    def _join_atm(df, right):
+        return (
+            df.filter(F.col("right") == right)
+            .join(
+                atm_strikes,
+                on=[
+                    F.col("symbol") == F.col("atm_sym"),
+                    F.col("expiration") == F.col("atm_exp"),
+                    F.col("strike") == F.col("atm_strike"),
+                ],
+                how="inner",
+            )
+            .drop("atm_sym", "atm_exp", "atm_strike")
+        )
+
+    short_puts  = _join_atm(valid, "P").alias("sp")
+    short_calls = _join_atm(valid, "C").alias("sc")
+    long_puts   = valid.filter(F.col("right") == "P").alias("lp")
+    long_calls  = valid.filter(F.col("right") == "C").alias("lc")
+
+    put_spread = (
+        short_puts.join(long_puts, on=[
+            F.col("sp.symbol") == F.col("lp.symbol"),
+            F.col("sp.expiration") == F.col("lp.expiration"),
+            F.col("lp.strike") < F.col("sp.strike"),
+        ], how="inner")
+        .select(
+            F.col("sp.symbol").alias("symbol"),
+            F.col("sp.expiration").alias("expiration"),
+            F.col("sp.strike").alias("atm_strike"),
+            F.col("lp.strike").alias("put_wing_strike"),
+            F.col("sp.mid").alias("short_put_mid"),
+            F.col("lp.mid").alias("long_put_mid"),
+            (F.col("sp.mid") - F.col("lp.mid")).alias("put_credit_per_share"),
+            (F.col("sp.strike") - F.col("lp.strike")).alias("put_wing_width"),
+            F.col("sp.underlying_price").alias("underlying_price"),
+            F.col("sp.dte").alias("dte"),
+            F.col("sp.delta").alias("short_put_delta"),
+            F.col("lp.delta").alias("long_put_delta"),
+            F.col("sp.implied_vol").alias("atm_put_iv"),
+        ).alias("ps")
+    )
+
+    call_spread = (
+        short_calls.join(long_calls, on=[
+            F.col("sc.symbol") == F.col("lc.symbol"),
+            F.col("sc.expiration") == F.col("lc.expiration"),
+            F.col("lc.strike") > F.col("sc.strike"),
+        ], how="inner")
+        .select(
+            F.col("sc.symbol").alias("symbol"),
+            F.col("sc.expiration").alias("expiration"),
+            F.col("sc.strike").alias("atm_strike"),
+            F.col("lc.strike").alias("call_wing_strike"),
+            F.col("sc.mid").alias("short_call_mid"),
+            F.col("lc.mid").alias("long_call_mid"),
+            (F.col("sc.mid") - F.col("lc.mid")).alias("call_credit_per_share"),
+            (F.col("lc.strike") - F.col("sc.strike")).alias("call_wing_width"),
+            F.col("sc.delta").alias("short_call_delta"),
+            F.col("lc.delta").alias("long_call_delta"),
+            F.col("sc.implied_vol").alias("atm_call_iv"),
+        ).alias("cs")
+    )
+
+    butterflies = put_spread.join(call_spread, on=[
+        F.col("ps.symbol")         == F.col("cs.symbol"),
+        F.col("ps.expiration")     == F.col("cs.expiration"),
+        F.col("ps.atm_strike")     == F.col("cs.atm_strike"),
+        F.col("ps.put_wing_width") == F.col("cs.call_wing_width"),  # symmetric
+    ], how="inner")
+
+    total_credit_ps = F.col("ps.put_credit_per_share") + F.col("cs.call_credit_per_share")
+    wing_width      = F.col("ps.put_wing_width")
+    total_credit_c  = total_credit_ps * 100
+    max_loss_c      = (wing_width - total_credit_ps) * 100
+    spread_ratio    = (total_credit_ps / wing_width) * 100
+    credit_yield    = F.when(max_loss_c > 0, total_credit_c / max_loss_c * 100)
+    roc             = (total_credit_ps / F.col("ps.atm_strike")) * 100
+    lower_be        = F.col("ps.atm_strike") - total_credit_ps
+    upper_be        = F.col("ps.atm_strike") + total_credit_ps
+
+    result = (
+        butterflies
+        .filter(total_credit_ps > 0)
+        .filter(max_loss_c > 0)
+        .select(
+            F.col("ps.symbol").alias("symbol"),
+            F.col("ps.expiration").alias("expiration"),
+            F.col("ps.dte").alias("dte"),
+            F.col("ps.atm_strike").alias("atm_strike"),
+            F.col("ps.put_wing_strike").alias("put_wing_strike"),
+            F.col("cs.call_wing_strike").alias("call_wing_strike"),
+            wing_width.alias("wing_width"),
+            F.col("ps.short_put_mid").alias("short_put_mid"),
+            F.col("cs.short_call_mid").alias("short_call_mid"),
+            F.col("ps.long_put_mid").alias("long_put_mid"),
+            F.col("cs.long_call_mid").alias("long_call_mid"),
+            total_credit_c.alias("total_credit"),
+            total_credit_c.alias("max_profit"),
+            max_loss_c.alias("max_loss"),
+            spread_ratio.alias("spread_ratio"),
+            credit_yield.alias("credit_yield"),
+            roc.alias("roc"),
+            lower_be.alias("lower_breakeven"),
+            upper_be.alias("upper_breakeven"),
+            F.col("ps.underlying_price").alias("underlying_price"),
+            (F.abs(F.col("ps.underlying_price") - F.col("ps.atm_strike"))
+             / F.col("ps.underlying_price") * 100).alias("pct_to_atm_strike"),
+            (F.abs(F.col("ps.underlying_price") - lower_be)
+             / F.col("ps.underlying_price") * 100).alias("pct_to_lower_breakeven"),
+            (F.abs(F.col("ps.underlying_price") - upper_be)
+             / F.col("ps.underlying_price") * 100).alias("pct_to_upper_breakeven"),
+            F.col("ps.short_put_delta").alias("short_put_delta"),
+            F.col("ps.long_put_delta").alias("long_put_delta"),
+            F.col("cs.short_call_delta").alias("short_call_delta"),
+            F.col("cs.long_call_delta").alias("long_call_delta"),
+            F.col("ps.atm_put_iv").alias("atm_put_iv"),
+            F.col("cs.atm_call_iv").alias("atm_call_iv"),
+        )
+        .orderBy(F.col("spread_ratio").desc())
+    )
+
+    logger.info("Generated %d iron butterfly combinations", result.count())
     return result
