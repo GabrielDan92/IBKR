@@ -77,31 +77,44 @@ st.sidebar.title("Filters")
 chain_df = load_parquet(os.path.join(DATA_DIR, "option_chain"))
 
 if chain_df is not None and not chain_df.empty:
-    symbols = sorted(chain_df["symbol"].unique())
-    selected_symbols = st.sidebar.multiselect(
-        "Symbols", symbols, default=symbols
-    )
-
-    expirations = sorted(chain_df["expiration"].unique())
-    selected_expirations = st.sidebar.multiselect(
-        "Expirations", expirations, default=expirations
-    )
-
     min_spread_ratio = st.sidebar.slider(
         "Min spread ratio (%)", 0.0, 100.0, 25.0, 0.5
     )
 else:
-    selected_symbols = []
-    selected_expirations = []
     min_spread_ratio = 0.0
 
 
-def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply sidebar filters to a DataFrame."""
-    if "symbol" in df.columns and selected_symbols:
-        df = df[df["symbol"].isin(selected_symbols)]
-    if "expiration" in df.columns and selected_expirations:
-        df = df[df["expiration"].isin(selected_expirations)]
+def _header_filters(df: pd.DataFrame, key_prefix: str, extra_cols: list[str] | None = None) -> pd.DataFrame:
+    """Render Excel-style dropdown filters above the table for symbol, expiration,
+    and any extra categorical columns.  Returns the filtered DataFrame."""
+    filter_cols = []
+    if "symbol" in df.columns:
+        filter_cols.append("symbol")
+    if "expiration" in df.columns:
+        filter_cols.append("expiration")
+    if extra_cols:
+        filter_cols += [c for c in extra_cols if c in df.columns]
+
+    if not filter_cols:
+        return df
+
+    cols = st.columns(len(filter_cols))
+    for col_widget, col_name in zip(cols, filter_cols):
+        options = sorted(df[col_name].dropna().unique().tolist())
+        chosen = col_widget.multiselect(
+            col_name.replace("_", " ").title(),
+            options,
+            default=options,
+            key=f"{key_prefix}_{col_name}",
+        )
+        if chosen:
+            df = df[df[col_name].isin(chosen)]
+
+    return df
+
+
+def apply_spread_ratio_filter(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply only the sidebar spread-ratio slider filter."""
     if "spread_ratio" in df.columns:
         df = df[df["spread_ratio"] >= min_spread_ratio]
     return df
@@ -128,14 +141,9 @@ with tab_spreads:
     st.subheader("Credit / Debit Spreads")
     spreads_df = load_parquet(os.path.join(DATA_DIR, "spreads"))
     if spreads_df is not None and not spreads_df.empty:
-        # Strategy filter (inside the tab so it only shows when data exists)
-        strategies = sorted(spreads_df["strategy"].unique())
-        selected_strategies = st.multiselect(
-            "Strategy", strategies, default=strategies, key="spread_strategy"
+        filtered = apply_spread_ratio_filter(
+            _header_filters(spreads_df, "spreads", extra_cols=["strategy"])
         )
-        filtered = apply_filters(spreads_df)
-        if selected_strategies:
-            filtered = filtered[filtered["strategy"].isin(selected_strategies)]
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
@@ -183,7 +191,9 @@ with tab_condors:
     st.subheader("Iron Condors")
     condors_df = load_parquet(os.path.join(DATA_DIR, "iron_condors"))
     if condors_df is not None and not condors_df.empty:
-        filtered = apply_filters(condors_df)
+        filtered = apply_spread_ratio_filter(
+            _header_filters(condors_df, "condors")
+        )
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
@@ -230,7 +240,7 @@ with tab_strangles:
     st.subheader("Short Strangles")
     strangles_df = load_parquet(os.path.join(DATA_DIR, "strangles"))
     if strangles_df is not None and not strangles_df.empty:
-        filtered = apply_filters(strangles_df)
+        filtered = _header_filters(strangles_df, "strangles")
         st.dataframe(
             filtered.sort_values("total_premium", ascending=False),
             use_container_width=True,
@@ -276,7 +286,9 @@ with tab_butterflies:
     st.subheader("Iron Butterflies")
     butterflies_df = load_parquet(os.path.join(DATA_DIR, "iron_butterflies"))
     if butterflies_df is not None and not butterflies_df.empty:
-        filtered = apply_filters(butterflies_df)
+        filtered = apply_spread_ratio_filter(
+            _header_filters(butterflies_df, "butterflies")
+        )
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
@@ -314,13 +326,7 @@ with tab_calendars:
     st.subheader("Calendar Spreads")
     calendars_df = load_parquet(os.path.join(DATA_DIR, "calendars"))
     if calendars_df is not None and not calendars_df.empty:
-        right_filter_cal = st.radio("Right", ["All", "Calls (C)", "Puts (P)"],
-                                    horizontal=True, key="cal_right")
-        filtered = apply_filters(calendars_df)
-        if right_filter_cal == "Calls (C)":
-            filtered = filtered[filtered["right"] == "C"]
-        elif right_filter_cal == "Puts (P)":
-            filtered = filtered[filtered["right"] == "P"]
+        filtered = _header_filters(calendars_df, "calendars", extra_cols=["right"])
         st.dataframe(
             filtered.sort_values("theta_differential", ascending=False),
             use_container_width=True,
@@ -363,7 +369,7 @@ with tab_analytics:
         st.markdown("#### Expected Move (ATM Straddle)")
         em_df = load_parquet(os.path.join(DATA_DIR, "expected_move"))
         if em_df is not None and not em_df.empty:
-            filtered_em = em_df[em_df["symbol"].isin(selected_symbols)] if selected_symbols else em_df
+            filtered_em = _header_filters(em_df, "em")
             st.dataframe(
                 filtered_em,
                 use_container_width=True,
@@ -388,7 +394,7 @@ with tab_analytics:
         st.markdown("#### Max Pain")
         mp_df = load_parquet(os.path.join(DATA_DIR, "max_pain"))
         if mp_df is not None and not mp_df.empty:
-            filtered_mp = mp_df[mp_df["symbol"].isin(selected_symbols)] if selected_symbols else mp_df
+            filtered_mp = _header_filters(mp_df, "mp")
             st.dataframe(
                 filtered_mp,
                 use_container_width=True,
@@ -412,12 +418,7 @@ with tab_analytics:
 with tab_chain:
     st.subheader("Raw Option Chain")
     if chain_df is not None and not chain_df.empty:
-        filtered = apply_filters(chain_df)
-        right_filter = st.radio("Right", ["All", "Calls (C)", "Puts (P)"], horizontal=True)
-        if right_filter == "Calls (C)":
-            filtered = filtered[filtered["right"] == "C"]
-        elif right_filter == "Puts (P)":
-            filtered = filtered[filtered["right"] == "P"]
+        filtered = _header_filters(chain_df, "chain", extra_cols=["right"])
         st.dataframe(
             filtered.sort_values(["symbol", "expiration", "strike"]),
             use_container_width=True,
