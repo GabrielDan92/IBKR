@@ -80,8 +80,20 @@ if chain_df is not None and not chain_df.empty:
     min_spread_ratio = st.sidebar.slider(
         "Min spread ratio (%)", 0.0, 100.0, 25.0, 0.5
     )
+    min_pct_to_short_strike = st.sidebar.slider(
+        "Min % to Short Strike (%)", 0.0, 100.0, 5.0, 0.5
+    )
+    min_pct_to_long_strike = st.sidebar.slider(
+        "Min % to Long Strike (%)", 0.0, 100.0, 5.0, 0.5
+    )
+    min_credit_yield = st.sidebar.slider(
+        "Min Credit Yield (%)", 0.0, 100.0, 30.0, 0.5
+    )
 else:
     min_spread_ratio = 0.0
+    min_pct_to_short_strike = 0.0
+    min_pct_to_long_strike = 0.0
+    min_credit_yield = 0.0
 
 
 def _header_filters(df: pd.DataFrame, key_prefix: str, extra_cols: list[str] | None = None) -> pd.DataFrame:
@@ -114,9 +126,15 @@ def _header_filters(df: pd.DataFrame, key_prefix: str, extra_cols: list[str] | N
 
 
 def apply_spread_ratio_filter(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply only the sidebar spread-ratio slider filter."""
+    """Apply sidebar spread filters (spread ratio, % to strikes, credit yield)."""
     if "spread_ratio" in df.columns:
         df = df[df["spread_ratio"] >= min_spread_ratio]
+    if "pct_to_short_strike" in df.columns:
+        df = df[df["pct_to_short_strike"] >= min_pct_to_short_strike]
+    if "pct_to_long_strike" in df.columns:
+        df = df[df["pct_to_long_strike"] >= min_pct_to_long_strike]
+    if "credit_yield" in df.columns:
+        df = df[df["credit_yield"] >= min_credit_yield]
     return df
 
 
