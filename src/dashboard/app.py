@@ -150,17 +150,18 @@ if chain_df is None:
     st.stop()
 
 # ── tab layout ───────────────────────────────────────────────────────
-tab_spreads, tab_condors, tab_butterflies, tab_calendars, tab_strangles, tab_analytics, tab_chain = st.tabs(
-    ["Vertical Spreads", "Iron Condors", "Iron Butterflies", "Calendars", "Strangles", "Analytics", "Raw Chain"]
+tab_credit, tab_debit, tab_condors, tab_butterflies, tab_calendars, tab_strangles, tab_analytics, tab_chain = st.tabs(
+    ["Credit Spreads", "Debit Spreads", "Iron Condors", "Iron Butterflies", "Calendars", "Strangles", "Analytics", "Raw Chain"]
 )
 
-# ── Spreads ──────────────────────────────────────────────────────────
-with tab_spreads:
-    st.subheader("Credit / Debit Spreads")
+# ── Credit Spreads (Put Credit + Call Credit) ────────────────────────
+with tab_credit:
+    st.subheader("Credit Spreads — Put & Call")
     spreads_df = load_parquet(os.path.join(DATA_DIR, "spreads"))
     if spreads_df is not None and not spreads_df.empty:
+        credit_df = spreads_df[spreads_df["strategy"].str.contains("Credit", na=False)]
         filtered = apply_spread_ratio_filter(
-            _header_filters(spreads_df, "spreads", extra_cols=["strategy"])
+            _header_filters(credit_df, "credit_spreads", extra_cols=["strategy"])
         )
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
@@ -200,9 +201,59 @@ with tab_spreads:
                 "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
             },
         )
-        st.caption(f"{len(filtered)} spreads shown")
+        st.caption(f"{len(filtered)} credit spreads shown")
     else:
-        st.info("No spread data available yet.")
+        st.info("No credit spread data available yet.")
+
+# ── Debit Spreads (Put Debit + Call Debit) ───────────────────────────
+with tab_debit:
+    st.subheader("Debit Spreads — Put & Call")
+    if spreads_df is None:
+        spreads_df = load_parquet(os.path.join(DATA_DIR, "spreads"))
+    if spreads_df is not None and not spreads_df.empty:
+        debit_df = spreads_df[spreads_df["strategy"].str.contains("Debit", na=False)]
+        filtered = _header_filters(debit_df, "debit_spreads", extra_cols=["strategy"])
+        st.dataframe(
+            filtered.sort_values("spread_ratio", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "right": None,
+                "symbol": "Symbol",
+                "expiration": "Expiration",
+                "strategy": "Strategy",
+                "dte": "DTE",
+                **_pct_cols(
+                    spread_ratio="Spread Ratio",
+                    credit_yield="Credit Yield",
+                    roc="ROC",
+                    pct_to_short_strike="% to Short Strike",
+                    pct_to_long_strike="% to Long Strike",
+                    pct_to_breakeven="% to Breakeven",
+                ),
+                **_dollar_cols(
+                    short_strike="Short Strike",
+                    long_strike="Long Strike",
+                    short_mid="Short Price (Mid)",
+                    long_mid="Long Price (Mid)",
+                    credit="Net Debit",
+                    width="Width",
+                    max_profit="Max Profit",
+                    max_loss="Max Loss",
+                    breakeven="Breakeven",
+                    underlying_price="Underlying Price",
+                ),
+                "short_delta": st.column_config.NumberColumn(label="Short Delta", format="%.4f"),
+                "long_delta": st.column_config.NumberColumn(label="Long Delta", format="%.4f"),
+                "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
+                "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
+                "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
+                "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
+            },
+        )
+        st.caption(f"{len(filtered)} debit spreads shown")
+    else:
+        st.info("No debit spread data available yet.")
 
 # ── Iron Condors ─────────────────────────────────────────────────────
 with tab_condors:

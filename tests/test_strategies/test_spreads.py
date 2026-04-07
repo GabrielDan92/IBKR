@@ -91,14 +91,14 @@ class TestCalculateSpreads:
         for row in debit_rows:
             assert row.credit < 0
 
-    def test_bull_put_short_above_long(self, spreads_df):
-        puts = spreads_df.filter("strategy LIKE 'Bull Put%'").collect()
+    def test_put_credit_short_above_long(self, spreads_df):
+        puts = spreads_df.filter("strategy LIKE 'Put Credit%'").collect()
         assert len(puts) > 0
         for row in puts:
             assert row.short_strike > row.long_strike
 
-    def test_bear_call_long_above_short(self, spreads_df):
-        calls = spreads_df.filter("strategy LIKE 'Bear Call%'").collect()
+    def test_call_credit_long_above_short(self, spreads_df):
+        calls = spreads_df.filter("strategy LIKE 'Call Credit%'").collect()
         assert len(calls) > 0
         for row in calls:
             assert row.long_strike > row.short_strike
@@ -176,13 +176,13 @@ class TestCalculateIronCondors:
 # OTM constraint → the debit spread survives dedup.
 
 _CHAIN_DATA_WITH_ITM = _CHAIN_DATA + [
-    # ITM put (strike=105 > underlying=100): enables Bear Put Debit Spread
+    # ITM put (strike=105 > underlying=100): enables Put Debit Spread
     {"symbol": "TEST", "expiration": _EXPIRY, "strike": 105.0, "right": "P",
      "bid": 5.30, "ask": 5.70, "last": 5.50, "mid": 5.50,
      "delta": -0.82, "gamma": 0.02, "theta": -0.04, "vega": 0.12,
      "implied_vol": 0.25, "open_interest": 150.0, "volume": 20.0,
      "underlying_price": 100.0, "dte": 44},
-    # ITM call (strike=95 < underlying=100): enables Bull Call Debit Spread
+    # ITM call (strike=95 < underlying=100): enables Call Debit Spread
     {"symbol": "TEST", "expiration": _EXPIRY, "strike": 95.0, "right": "C",
      "bid": 5.30, "ask": 5.70, "last": 5.50, "mid": 5.50,
      "delta": 0.82, "gamma": 0.02, "theta": -0.04, "vega": 0.12,
@@ -219,41 +219,41 @@ class TestSpreadsCoverage:
                 )
 
     def test_all_four_strategy_types(self, all_spreads_df):
-        """Bull Put Credit, Bear Call Credit, Bear Put Debit, Bull Call Debit."""
+        """Put Credit, Call Credit, Put Debit, Call Debit."""
         strategies = {row.strategy for row in all_spreads_df.collect()}
         for expected in (
-            "Bull Put Credit Spread",
-            "Bear Call Credit Spread",
-            "Bear Put Debit Spread",
-            "Bull Call Debit Spread",
+            "Put Credit Spread",
+            "Call Credit Spread",
+            "Put Debit Spread",
+            "Call Debit Spread",
         ):
             assert expected in strategies, f"Missing strategy: {expected!r}"
 
     def test_credit_put_breakeven(self, all_spreads_df):
-        """Bull Put Credit: breakeven = short_strike − credit/100."""
-        rows = all_spreads_df.filter("strategy = 'Bull Put Credit Spread'").collect()
+        """Put Credit: breakeven = short_strike − credit/100."""
+        rows = all_spreads_df.filter("strategy = 'Put Credit Spread'").collect()
         assert rows
         for row in rows:
             assert abs(row.breakeven - (row.short_strike - row.credit / 100)) < 1e-4
 
     def test_credit_call_breakeven(self, all_spreads_df):
-        """Bear Call Credit: breakeven = short_strike + credit/100."""
-        rows = all_spreads_df.filter("strategy = 'Bear Call Credit Spread'").collect()
+        """Call Credit: breakeven = short_strike + credit/100."""
+        rows = all_spreads_df.filter("strategy = 'Call Credit Spread'").collect()
         assert rows
         for row in rows:
             assert abs(row.breakeven - (row.short_strike + row.credit / 100)) < 1e-4
 
     def test_debit_put_breakeven(self, all_spreads_df):
-        """Bear Put Debit: breakeven = long_strike − |credit|/100."""
-        rows = all_spreads_df.filter("strategy = 'Bear Put Debit Spread'").collect()
-        assert rows, "No Bear Put Debit rows found — check ITM put fixture"
+        """Put Debit: breakeven = long_strike − |credit|/100."""
+        rows = all_spreads_df.filter("strategy = 'Put Debit Spread'").collect()
+        assert rows, "No Put Debit rows found — check ITM put fixture"
         for row in rows:
             assert abs(row.breakeven - (row.long_strike - abs(row.credit) / 100)) < 1e-4
 
     def test_debit_call_breakeven(self, all_spreads_df):
-        """Bull Call Debit: breakeven = long_strike + |credit|/100."""
-        rows = all_spreads_df.filter("strategy = 'Bull Call Debit Spread'").collect()
-        assert rows, "No Bull Call Debit rows found — check ITM call fixture"
+        """Call Debit: breakeven = long_strike + |credit|/100."""
+        rows = all_spreads_df.filter("strategy = 'Call Debit Spread'").collect()
+        assert rows, "No Call Debit rows found — check ITM call fixture"
         for row in rows:
             assert abs(row.breakeven - (row.long_strike + abs(row.credit) / 100)) < 1e-4
 

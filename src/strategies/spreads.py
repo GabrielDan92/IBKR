@@ -29,17 +29,33 @@ def calculate_spreads(
     """
     Generate all vertical spread combinations (credit AND debit) and rank them.
 
+    Exactly four canonical strategies are produced:
+
+    **Credit spreads** (net premium received up-front):
+
+    - *Put Credit Spread* — sell ATM/OTM put, buy lower-strike OTM put.
+      Max profit = net credit.  Max loss = width − net credit.
+    - *Call Credit Spread* — sell ATM/OTM call, buy higher-strike OTM call.
+      Max profit = net credit.  Max loss = width − net credit.
+
+    **Debit spreads** (net premium paid up-front):
+
+    - *Put Debit Spread* — buy ATM/ITM put, sell lower-strike OTM put.
+      Max profit = width − net debit.  Max loss = net debit.
+    - *Call Debit Spread* — buy ATM/ITM call, sell higher-strike OTM call.
+      Max profit = width − net debit.  Max loss = net debit.
+
     Logic
     -----
     1. **Leg selection** — all contracts with a valid ``mid`` price.
        Short legs must be OTM or ATM.
     2. **Self-join** — pair each short leg with every other contract
-       of the same symbol / expiration / right (both strike orderings).
+       of the same symbol / expiration / right.
     3. **Metric calculation** — net premium, width, max profit, max loss,
        spread ratio, ROC, breakeven, % to strike, % to breakeven,
        and net Greeks for the spread.
-    4. **Strategy labelling** — e.g. "Bull Put Credit Spread",
-       "Bull Call Debit Spread", "Bear Call Credit Spread", etc.
+    4. **Strategy labelling** — derived from strike ordering:
+       ``Put Credit``, ``Call Credit``, ``Put Debit``, ``Call Debit``.
     5. **Ranking** — ordered by ``spread_ratio DESC``.
 
     Parameters
@@ -105,11 +121,11 @@ def calculate_spreads(
 
     # Breakeven:
     #   Credit spreads → based on short strike
-    #     Bull Put Credit:  short_strike − premium
-    #     Bear Call Credit: short_strike + premium
+    #     Put Credit:   short_strike − premium
+    #     Call Credit:  short_strike + premium
     #   Debit spreads → based on long strike
-    #     Bull Call Debit:  long_strike + |premium|
-    #     Bear Put Debit:   long_strike − |premium|
+    #     Call Debit:   long_strike + |premium|
+    #     Put Debit:    long_strike − |premium|
     breakeven = F.when(
         is_credit,
         F.when(F.col("s.right") == "P",
@@ -137,22 +153,29 @@ def calculate_spreads(
     ) / F.col("s.underlying_price")) * 100
 
     # ── strategy label ───────────────────────────────────────────────
-    # Direction: Bull = profit when stock rises, Bear = profit when falls
-    #   Puts:  s.strike > l.strike → Bull;  s.strike < l.strike → Bear
-    #   Calls: s.strike > l.strike → Bull;  s.strike < l.strike → Bear
-    #   (selling higher-strike put or buying lower-strike call = bullish)
-    direction = F.when(
-        F.col("s.right") == "P",
-        F.when(F.col("s.strike") > F.col("l.strike"), F.lit("Bull"))
-         .otherwise(F.lit("Bear")),
-    ).otherwise(
-        F.when(F.col("s.strike") < F.col("l.strike"), F.lit("Bear"))
-         .otherwise(F.lit("Bull")),
-    )
-    right_label = F.when(F.col("s.right") == "P", F.lit("Put")).otherwise(F.lit("Call"))
-    spread_type = F.when(is_credit, F.lit("Credit")).otherwise(F.lit("Debit"))
-    strategy_label = F.concat(
-        direction, F.lit(" "), right_label, F.lit(" "), spread_type, F.lit(" Spread")
+    # Strike ordering is the canonical classifier (4 strategies):
+    #   PUT  short > long  →  Put Credit Spread   (sell higher put, buy lower put)
+    #   PUT  short < long  →  Put Debit Spread    (sell lower put, buy higher put)
+    #   CALL short < long  →  Call Credit Spread  (sell lower call, buy higher call)
+    #   CALL short > long  →  Call Debit Spread   (sell higher call, buy lower call)
+    strategy_label = (
+        F.when(
+            (F.col("s.right") == "P") & (F.col("s.strike") > F.col("l.strike")),
+            F.lit("Put Credit Spread"),
+        )
+        .when(
+            (F.col("s.right") == "P") & (F.col("s.strike") < F.col("l.strike")),
+            F.lit("Put Debit Spread"),
+        )
+        .when(
+            (F.col("s.right") == "C") & (F.col("s.strike") < F.col("l.strike")),
+            F.lit("Call Credit Spread"),
+        )
+        .when(
+            (F.col("s.right") == "C") & (F.col("s.strike") > F.col("l.strike")),
+            F.lit("Call Debit Spread"),
+        )
+        .otherwise(F.lit("Unknown"))
     )
 
     result = (
@@ -217,7 +240,7 @@ def calculate_iron_condors(
     spreads_df: DataFrame,
 ) -> DataFrame:
     """
-    Build iron condors by combining the best bull-put and best bear-call
+    Build iron condors by combining the best put-credit and best call-credit
     spread for each symbol / expiration.
 
     An iron condor = *sell* an OTM put spread + *sell* an OTM call spread

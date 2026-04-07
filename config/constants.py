@@ -48,7 +48,7 @@ IB_CLIENT_ID = _env_int("IB_CLIENT_ID", 1)
 # ═════════════════════════════════════════════════════════════════════
 DEFAULT_EXCHANGE = _env("DEFAULT_EXCHANGE", "SMART")
 DEFAULT_CURRENCY = _env("DEFAULT_CURRENCY", "USD")
-MARKET_DATA_TYPE = _env_int("MARKET_DATA_TYPE", 3)  # 1=live, 3=delayed, 4=delayed-frozen
+MARKET_DATA_TYPE = _env_int("MARKET_DATA_TYPE", 4)  # 1=live, 3=delayed, 4=delayed-frozen
 GENERIC_TICKS = _env("GENERIC_TICKS", "100,101,106")  # volume, open interest, IV
 
 # ═════════════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ GENERIC_TICKS = _env("GENERIC_TICKS", "100,101,106")  # volume, open interest, I
 # ═════════════════════════════════════════════════════════════════════
 BATCH_SIZE = _env_int("BATCH_SIZE", 45)
 BATCH_PAUSE_S = _env_float("BATCH_PAUSE_S", 1.0)
-TICK_SETTLE_S = _env_float("TICK_SETTLE_S", 3.0)
+TICK_SETTLE_S = _env_float("TICK_SETTLE_S", 10.0)
 QUALIFY_BATCH_SIZE = _env_int("QUALIFY_BATCH_SIZE", 100)
 QUALIFY_PAUSE_S = _env_float("QUALIFY_PAUSE_S", 0.5)
 
@@ -85,5 +85,8 @@ SPARK_LOG_LEVEL = _env("SPARK_LOG_LEVEL", "WARN")
 # ═════════════════════════════════════════════════════════════════════
 # Output & Dashboard
 # ═════════════════════════════════════════════════════════════════════
-OUTPUT_DIR = _env("OUTPUT_DIR", "/opt/app/data")
+OUTPUT_DIR = _env(
+    "OUTPUT_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
 DASHBOARD_PORT = _env_int("DASHBOARD_PORT", 8501)

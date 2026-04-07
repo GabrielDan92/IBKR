@@ -339,21 +339,25 @@ class IBKRClient(BaseMarketDataClient):
 
 
 def _mid_price(ticker: Ticker) -> float | None:
-    """Return best available price: mid(bid,ask) → last → close → marketPrice."""
+    """Return best available price: mid(bid,ask) → last → close → marketPrice.
+
+    IBKR returns -1 as a sentinel when no data is available (market closed,
+    no subscription, etc.).  All branches guard against non-positive values.
+    """
     bid = _safe_float(ticker.bid)
     ask = _safe_float(ticker.ask)
-    if bid is not None and ask is not None:
+    if bid is not None and ask is not None and bid > 0 and ask > 0:
         return (bid + ask) / 2.0
     last = _safe_float(ticker.last)
-    if last is not None:
+    if last is not None and last > 0:
         return last
     close = _safe_float(ticker.close)
-    if close is not None:
+    if close is not None and close > 0:
         return close
     # ib_async built-in fallback (last → mid → close)
     try:
         mp = ticker.marketPrice()
-        if mp is not None and math.isfinite(mp):
+        if mp is not None and math.isfinite(mp) and mp > 0:
             return mp
     except (AttributeError, TypeError):
         pass
@@ -428,6 +432,7 @@ def _ticker_to_row(
         "bid": bid,
         "ask": ask,
         "last": last,
+        "close": close,
         "mid": mid,
         "delta": delta,
         "gamma": gamma,

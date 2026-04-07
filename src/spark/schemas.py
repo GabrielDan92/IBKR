@@ -28,6 +28,7 @@ OPTION_CHAIN_SCHEMA = StructType(
         StructField("bid", DoubleType(), nullable=True),
         StructField("ask", DoubleType(), nullable=True),
         StructField("last", DoubleType(), nullable=True),
+        StructField("close", DoubleType(), nullable=True),
         StructField("mid", DoubleType(), nullable=True),
         StructField("delta", DoubleType(), nullable=True),
         StructField("gamma", DoubleType(), nullable=True),
@@ -47,7 +48,7 @@ SPREAD_SCHEMA = StructType(
     [
         StructField("symbol", StringType(), nullable=False),
         StructField("expiration", DateType(), nullable=False),
-        StructField("strategy", StringType(), nullable=False),          # bull_put, bear_call
+        StructField("strategy", StringType(), nullable=False),          # put_credit, call_credit, put_debit, call_debit
         StructField("short_strike", DoubleType(), nullable=False),
         StructField("long_strike", DoubleType(), nullable=False),
         StructField("short_mid", DoubleType(), nullable=True),

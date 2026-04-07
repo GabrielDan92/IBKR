@@ -28,8 +28,8 @@ Startup is sequential: `ib-gateway` must be healthy → `spark-app` runs the pip
 
 ## What It Computes
 
-- **Vertical Spreads** — all credit and debit combinations (Bull Put Credit, Bear Call Credit, Bull Call Debit, Bear Put Debit) with metrics: credit/debit, max profit/loss (×100 contract multiplier), spread ratio, credit yield, ROC, breakeven, % to strike/breakeven, net Greeks
-- **Iron Condors** — best bull-put + best bear-call credit spread per symbol/expiration, with combined metrics
+- **Vertical Spreads** — all credit and debit combinations (Put Credit, Call Credit, Put Debit, Call Debit) with metrics: credit/debit, max profit/loss (×100 contract multiplier), spread ratio, credit yield, ROC, breakeven, % to strike/breakeven, net Greeks
+- **Iron Condors** — best put-credit + best call-credit spread per symbol/expiration, with combined metrics
 - **Short Strangles** — all OTM put + OTM call pairings with total premium, breakevens, ROC, net Greeks
 
 ## Entry Points
