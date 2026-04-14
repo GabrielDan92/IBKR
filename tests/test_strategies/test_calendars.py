@@ -62,10 +62,10 @@ class TestCalendarSpreads:
         for row in calendars_df.collect():
             assert abs(row.approx_max_profit - row.near_mid * 100) < 1e-4
 
-    def test_approx_roc_formula(self, calendars_df):
+    def test_approx_ROC_formula(self, calendars_df):
         for row in calendars_df.collect():
             expected = row.approx_max_profit / row.net_debit * 100
-            assert abs(row.approx_roc - expected) < 1e-4
+            assert abs(row.approx_ROC - expected) < 1e-4
 
     def test_theta_differential_formula(self, calendars_df):
         for row in calendars_df.collect():

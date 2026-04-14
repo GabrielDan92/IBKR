@@ -15,10 +15,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ib_async import IB, Contract, Index, Option, Stock, Ticker, util
+from ib_async import IB, Contract, Option, Stock, Ticker
 
 from config.constants import (
     BATCH_PAUSE_S,
@@ -36,12 +36,10 @@ from config.constants import (
     TARGET_DTE,
     TICK_SETTLE_S,
 )
-from src.ibkr.base import BaseMarketDataClient
-
 logger = logging.getLogger(__name__)
 
 
-class IBKRClient(BaseMarketDataClient):
+class IBKRClient:
     """
     Concrete market-data provider backed by IB Gateway / TWS.
 
@@ -65,6 +63,13 @@ class IBKRClient(BaseMarketDataClient):
         self._port = port
         self._client_id = client_id
         self._ib = IB()
+
+    async def __aenter__(self) -> "IBKRClient":
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # noqa: ANN001
+        await self.disconnect()
 
     # ── lifecycle ────────────────────────────────────────────────────
 
@@ -186,7 +191,7 @@ class IBKRClient(BaseMarketDataClient):
         chain = next((c for c in chains if c.exchange == DEFAULT_EXCHANGE), chains[0])
 
         # Step 3 — filter expirations
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         min_expiry = today + timedelta(days=target_dte - dte_range_days)
         max_expiry = today + timedelta(days=target_dte + dte_range_days)
 
@@ -408,7 +413,7 @@ def _ticker_to_row(
 
     # DTE
     expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, "%Y%m%d").date()
-    dte = (expiry_date - datetime.utcnow().date()).days
+    dte = (expiry_date - datetime.now(timezone.utc).date()).days
 
     # Open interest & volume
     open_interest = None

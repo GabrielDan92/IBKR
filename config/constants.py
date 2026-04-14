@@ -56,7 +56,7 @@ GENERIC_TICKS = _env("GENERIC_TICKS", "100,101,106")  # volume, open interest, I
 # ═════════════════════════════════════════════════════════════════════
 BATCH_SIZE = _env_int("BATCH_SIZE", 45)
 BATCH_PAUSE_S = _env_float("BATCH_PAUSE_S", 1.0)
-TICK_SETTLE_S = _env_float("TICK_SETTLE_S", 10.0)
+TICK_SETTLE_S = _env_float("TICK_SETTLE_S", 2.0)
 QUALIFY_BATCH_SIZE = _env_int("QUALIFY_BATCH_SIZE", 100)
 QUALIFY_PAUSE_S = _env_float("QUALIFY_PAUSE_S", 0.5)
 

@@ -184,4 +184,5 @@ def calculate_max_pain(chain_df: DataFrame) -> DataFrame:
     )
 
     logger.info("Computed max pain for %d symbol/expiration pairs", result.count())
+
     return result

@@ -169,6 +169,14 @@ class TestCalculateIronCondors:
             assert abs(row.lower_breakeven - (row.put_short_strike - row.put_credit / 100)) < 1e-4
             assert abs(row.upper_breakeven - (row.call_short_strike + row.call_credit / 100)) < 1e-4
 
+    def test_ROC_formula(self, spreads_df):
+        """ROC = total_credit_per_share / avg(short strikes) × 100."""
+        result = calculate_iron_condors(spreads_df)
+        for row in result.collect():
+            avg_short_strike = (row.put_short_strike + row.call_short_strike) / 2
+            expected = (row.total_credit / 100) / avg_short_strike * 100
+            assert abs(row.ROC - expected) < 1e-4
+
 
 # ── additional coverage: debit spreads require ITM options ────────────
 # When an ITM option is added as the *long* leg, the mirror credit spread
@@ -203,7 +211,7 @@ def all_spreads_df(chain_df_with_itm):
 
 class TestSpreadsCoverage:
     """Covers features added after the initial test suite: debit spreads,
-    OTM constraint, breakeven formulas, roc, pct columns, credit_yield,
+    OTM constraint, breakeven formulas, ROC, pct columns, credit_yield,
     net Greek sign, and dedup correctness."""
 
     def test_short_legs_are_otm_or_atm(self, all_spreads_df):
@@ -257,12 +265,12 @@ class TestSpreadsCoverage:
         for row in rows:
             assert abs(row.breakeven - (row.long_strike + abs(row.credit) / 100)) < 1e-4
 
-    def test_roc_formula(self, all_spreads_df):
-        """roc = |net_premium_per_share| / short_strike × 100 = |credit| / short_strike."""
+    def test_ROC_formula(self, all_spreads_df):
+        """ROC = |net_premium_per_share| / short_strike × 100 = |credit| / short_strike."""
         for row in all_spreads_df.collect():
             expected = abs(row.credit) / row.short_strike
-            assert abs(row.roc - expected) < 1e-4, (
-                f"roc mismatch for {row.strategy}: {row.roc} != {expected}"
+            assert abs(row.ROC - expected) < 1e-4, (
+                f"ROC mismatch for {row.strategy}: {row.ROC} != {expected}"
             )
 
     def test_pct_to_short_strike(self, all_spreads_df):

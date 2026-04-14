@@ -75,9 +75,10 @@ def calculate_strangles(
     strangles = put_legs.join(call_legs, on=join_cond, how="inner")
 
     # ── metrics ──────────────────────────────────────────────────────
-    total_premium = F.col("p.mid") + F.col("c.mid")
-    lower_be = F.col("p.strike") - total_premium
-    upper_be = F.col("c.strike") + total_premium
+    premium_per_share = F.col("p.mid") + F.col("c.mid")
+    total_premium_contract = premium_per_share * 100
+    lower_be = F.col("p.strike") - premium_per_share
+    upper_be = F.col("c.strike") + premium_per_share
     breakeven_width = upper_be - lower_be
 
     pct_to_put_strike = (F.abs(
@@ -98,7 +99,7 @@ def calculate_strangles(
 
     # ROC: premium received / average of the two strikes
     avg_strike = (F.col("p.strike") + F.col("c.strike")) / 2
-    roc = (total_premium / avg_strike) * 100
+    roc = (premium_per_share / avg_strike) * 100
 
     result = (
         strangles
@@ -110,7 +111,7 @@ def calculate_strangles(
             F.col("c.strike").alias("call_strike"),
             F.col("p.mid").alias("put_mid"),
             F.col("c.mid").alias("call_mid"),
-            (total_premium * 100).alias("total_premium"),
+            total_premium_contract.alias("total_premium"),
             lower_be.alias("lower_breakeven"),
             upper_be.alias("upper_breakeven"),
             breakeven_width.alias("breakeven_width"),
@@ -130,7 +131,7 @@ def calculate_strangles(
             F.col("p.implied_vol").alias("put_implied_vol"),
             F.col("c.implied_vol").alias("call_implied_vol"),
         )
-        .filter(total_premium > 0)
+        .filter(premium_per_share > 0)
         .orderBy(F.col("total_premium").desc())
     )
 

@@ -103,9 +103,24 @@ def calculate_spreads(
 
     # ── metrics ──────────────────────────────────────────────────────
 
+    short_right = F.col("s.right")
+    short_strike = F.col("s.strike")
+    long_strike = F.col("l.strike")
+    underlying_price = F.col("s.underlying_price")
+    short_mid = F.col("s.mid")
+    long_mid = F.col("l.mid")
+    short_delta = F.col("s.delta")
+    long_delta = F.col("l.delta")
+    short_gamma = F.col("s.gamma")
+    long_gamma = F.col("l.gamma")
+    short_theta = F.col("s.theta")
+    long_theta = F.col("l.theta")
+    short_vega = F.col("s.vega")
+    long_vega = F.col("l.vega")
+
     # net_premium > 0 → credit received;  < 0 → debit paid
-    net_premium = F.col("s.mid") - F.col("l.mid")
-    width = F.abs(F.col("s.strike") - F.col("l.strike"))
+    net_premium = short_mid - long_mid
+    width = F.abs(short_strike - long_strike)
     is_credit = net_premium >= 0
 
     # Per-share max profit / max loss (always positive values)
@@ -114,10 +129,11 @@ def calculate_spreads(
 
     max_profit = raw_max_profit * 100   # ×100 shares per contract
     max_loss = raw_max_loss * 100       # ×100 shares per contract
+    credit = net_premium * 100
 
     spread_ratio = (F.abs(net_premium) / width) * 100
     credit_yield = F.when(raw_max_loss > 0, (raw_max_profit / raw_max_loss) * 100)
-    roc = (F.abs(net_premium) / F.col("s.strike")) * 100
+    roc = (F.abs(net_premium) / short_strike) * 100
 
     # Breakeven:
     #   Credit spreads → based on short strike
@@ -128,29 +144,26 @@ def calculate_spreads(
     #     Put Debit:    long_strike − |premium|
     breakeven = F.when(
         is_credit,
-        F.when(F.col("s.right") == "P",
-               F.col("s.strike") - net_premium
+        F.when(short_right == "P",
+               short_strike - net_premium
         ).otherwise(
-               F.col("s.strike") + net_premium
+               short_strike + net_premium
         ),
     ).otherwise(
-        F.when(F.col("s.right") == "P",
-               F.col("l.strike") + net_premium      # net_premium < 0
+        F.when(short_right == "P",
+               long_strike + net_premium      # net_premium < 0
         ).otherwise(
-               F.col("l.strike") - net_premium      # net_premium < 0
+               long_strike - net_premium      # net_premium < 0
         ),
     )
 
-    pct_to_short_strike = (F.abs(
-        F.col("s.underlying_price") - F.col("s.strike")
-    ) / F.col("s.underlying_price")) * 100
-    pct_to_long_strike = (F.abs(
-        F.col("s.underlying_price") - F.col("l.strike")
-    ) / F.col("s.underlying_price")) * 100
-
-    pct_to_breakeven = (F.abs(
-        F.col("s.underlying_price") - breakeven
-    ) / F.col("s.underlying_price")) * 100
+    pct_to_short_strike = (F.abs(underlying_price - short_strike) / underlying_price) * 100
+    pct_to_long_strike = (F.abs(underlying_price - long_strike) / underlying_price) * 100
+    pct_to_breakeven = (F.abs(underlying_price - breakeven) / underlying_price) * 100
+    net_delta = short_delta - long_delta
+    net_gamma = short_gamma - long_gamma
+    net_theta = short_theta - long_theta
+    net_vega = short_vega - long_vega
 
     # ── strategy label ───────────────────────────────────────────────
     # Strike ordering is the canonical classifier (4 strategies):
@@ -160,19 +173,19 @@ def calculate_spreads(
     #   CALL short > long  →  Call Debit Spread   (sell higher call, buy lower call)
     strategy_label = (
         F.when(
-            (F.col("s.right") == "P") & (F.col("s.strike") > F.col("l.strike")),
+            (short_right == "P") & (short_strike > long_strike),
             F.lit("Put Credit Spread"),
         )
         .when(
-            (F.col("s.right") == "P") & (F.col("s.strike") < F.col("l.strike")),
+            (short_right == "P") & (short_strike < long_strike),
             F.lit("Put Debit Spread"),
         )
         .when(
-            (F.col("s.right") == "C") & (F.col("s.strike") < F.col("l.strike")),
+            (short_right == "C") & (short_strike < long_strike),
             F.lit("Call Credit Spread"),
         )
         .when(
-            (F.col("s.right") == "C") & (F.col("s.strike") > F.col("l.strike")),
+            (short_right == "C") & (short_strike > long_strike),
             F.lit("Call Debit Spread"),
         )
         .otherwise(F.lit("Unknown"))
@@ -183,32 +196,31 @@ def calculate_spreads(
         .select(
             F.col("s.symbol").alias("symbol"),
             F.col("s.expiration").alias("expiration"),
-            F.col("s.right").alias("right"),
+            short_right.alias("right"),
             strategy_label.alias("strategy"),
-            F.col("s.underlying_price").alias("underlying_price"),
+            underlying_price.alias("underlying_price"),
             spread_ratio.alias("spread_ratio"),
-            F.col("s.strike").alias("short_strike"),
+            short_strike.alias("short_strike"),
             pct_to_short_strike.alias("pct_to_short_strike"),
-            F.col("s.mid").alias("short_mid"),
-            F.col("s.delta").alias("short_delta"),
-            F.col("l.strike").alias("long_strike"),
+            short_mid.alias("short_mid"),
+            short_delta.alias("short_delta"),
+            long_strike.alias("long_strike"),
             pct_to_long_strike.alias("pct_to_long_strike"),
-            F.col("l.mid").alias("long_mid"),
-            F.col("l.delta").alias("long_delta"),
-            (net_premium * 100).alias("credit"),
+            long_mid.alias("long_mid"),
+            long_delta.alias("long_delta"),
+            credit.alias("credit"),
             width.alias("width"),
             max_profit.alias("max_profit"),
             max_loss.alias("max_loss"),
             credit_yield.alias("credit_yield"),
-            roc.alias("roc"),
+            roc.alias("ROC"),
             breakeven.alias("breakeven"),
             pct_to_breakeven.alias("pct_to_breakeven"),
             F.col("s.dte").alias("dte"),
-            # Net Greeks (short − long because we *sell* the short leg)
-            (F.col("s.delta") - F.col("l.delta")).alias("net_delta"),
-            (F.col("s.gamma") - F.col("l.gamma")).alias("net_gamma"),
-            (F.col("s.theta") - F.col("l.theta")).alias("net_theta"),
-            (F.col("s.vega") - F.col("l.vega")).alias("net_vega"),
+            net_delta.alias("net_delta"),
+            net_gamma.alias("net_gamma"),
+            net_theta.alias("net_theta"),
+            net_vega.alias("net_vega"),
         )
         .filter(F.col("max_profit") > 0)   # valid spreads only
         .filter(F.col("max_loss") > 0)
@@ -282,37 +294,45 @@ def calculate_iron_condors(
 
     condors = put_side.join(call_side, on=condor_join, how="inner")
 
+    put_credit = F.col("p.credit")
+    call_credit = F.col("c.credit")
+    put_width = F.col("p.width")
+    call_width = F.col("c.width")
+    put_short_strike = F.col("p.short_strike")
+    call_short_strike = F.col("c.short_strike")
+    underlying_price = F.col("p.underlying_price")
+
     # p.credit and c.credit are already ×100 (from spreads output)
-    total_credit = F.col("p.credit") + F.col("c.credit")
+    total_credit = put_credit + call_credit
 
     # width is per-share; multiply by 100 for contract-level
-    wider_width_contract = F.greatest(F.col("p.width"), F.col("c.width")) * 100
+    wider_width_contract = F.greatest(put_width, call_width) * 100
     ic_max_loss = wider_width_contract - total_credit
     ic_ratio = (total_credit / wider_width_contract) * 100
     ic_credit_yield = F.when(ic_max_loss > 0, (total_credit / ic_max_loss) * 100)
     # ROC: per-share total credit / average of the two short strikes
     ic_per_share_credit = total_credit / 100
-    avg_short_strike = (F.col("p.short_strike") + F.col("c.short_strike")) / 2
+    avg_short_strike = (put_short_strike + call_short_strike) / 2
     ic_roc = (ic_per_share_credit / avg_short_strike) * 100
 
     # Breakevens use per-share credit (÷100) against per-share strikes
-    per_share_put_credit = F.col("p.credit") / 100
-    per_share_call_credit = F.col("c.credit") / 100
-    lower_be = F.col("p.short_strike") - per_share_put_credit
-    upper_be = F.col("c.short_strike") + per_share_call_credit
+    per_share_put_credit = put_credit / 100
+    per_share_call_credit = call_credit / 100
+    lower_be = put_short_strike - per_share_put_credit
+    upper_be = call_short_strike + per_share_call_credit
 
     result = condors.select(
         F.col("p.symbol").alias("symbol"),
         F.col("p.expiration").alias("expiration"),
-        F.col("p.short_strike").alias("put_short_strike"),
+        put_short_strike.alias("put_short_strike"),
         F.col("p.long_strike").alias("put_long_strike"),
-        F.col("c.short_strike").alias("call_short_strike"),
+        call_short_strike.alias("call_short_strike"),
         F.col("c.long_strike").alias("call_long_strike"),
-        F.col("p.credit").alias("put_credit"),
-        F.col("c.credit").alias("call_credit"),
+        put_credit.alias("put_credit"),
+        call_credit.alias("call_credit"),
         total_credit.alias("total_credit"),
-        F.col("p.width").alias("put_width"),
-        F.col("c.width").alias("call_width"),
+        put_width.alias("put_width"),
+        call_width.alias("call_width"),
         total_credit.alias("max_profit"),
         ic_max_loss.alias("max_loss"),
         ic_ratio.alias("spread_ratio"),
@@ -320,11 +340,11 @@ def calculate_iron_condors(
         ic_roc.alias("ROC"),
         lower_be.alias("lower_breakeven"),
         upper_be.alias("upper_breakeven"),
-        F.col("p.underlying_price").alias("underlying_price"),
-        (F.abs(F.col("p.underlying_price") - lower_be) / F.col("p.underlying_price") * 100).alias(
+        underlying_price.alias("underlying_price"),
+        (F.abs(underlying_price - lower_be) / underlying_price * 100).alias(
             "pct_to_lower_breakeven"
         ),
-        (F.abs(F.col("p.underlying_price") - upper_be) / F.col("p.underlying_price") * 100).alias(
+        (F.abs(underlying_price - upper_be) / underlying_price * 100).alias(
             "pct_to_upper_breakeven"
         ),
         F.col("p.dte").alias("dte"),
@@ -478,7 +498,7 @@ def calculate_iron_butterflies(
             max_loss_c.alias("max_loss"),
             spread_ratio.alias("spread_ratio"),
             credit_yield.alias("credit_yield"),
-            roc.alias("roc"),
+            roc.alias("ROC"),
             lower_be.alias("lower_breakeven"),
             upper_be.alias("upper_breakeven"),
             F.col("ps.underlying_price").alias("underlying_price"),
@@ -499,4 +519,5 @@ def calculate_iron_butterflies(
     )
 
     logger.info("Generated %d iron butterfly combinations", result.count())
+
     return result
