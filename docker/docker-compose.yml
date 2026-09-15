@@ -56,7 +56,7 @@ services:
       IB_GATEWAY_PORT: "4004"
       OUTPUT_DIR: /opt/app/data
     volumes:
-      - results:/opt/app/data
+      - ../data:/opt/app/data
       - ../src:/opt/app/src
       - ../config:/opt/app/config
     networks:
@@ -78,7 +78,7 @@ services:
     ports:
       - "127.0.0.1:8501:8501"
     volumes:
-      - results:/opt/app/data:ro
+      - ../data:/opt/app/data:ro
       - ../src/dashboard:/opt/app/src/dashboard
       - ../config:/opt/app/config
     networks:
@@ -88,6 +88,3 @@ services:
 networks:
   trader:
     driver: bridge
-
-volumes:
-  results:

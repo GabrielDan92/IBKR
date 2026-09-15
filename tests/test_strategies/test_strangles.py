@@ -62,7 +62,7 @@ class TestCalculateStrangles:
     def test_total_premium_is_sum_of_mids(self, chain_df):
         result = calculate_strangles(chain_df)
         for row in result.collect():
-            expected = row.put_mid + row.call_mid
+            expected = (row.put_mid + row.call_mid) * 100
             assert abs(row.total_premium - expected) < 1e-6
 
     def test_put_strike_below_underlying(self, chain_df):
@@ -97,12 +97,12 @@ class TestCalculateStrangles:
             expected = row.put_delta + row.call_delta
             assert abs(row.net_delta - expected) < 1e-6
 
-    def test_roc_formula(self, chain_df):
-        """ROC = total_premium / avg(put_strike, call_strike) × 100."""
+    def test_ROC_formula(self, chain_df):
+        """ROC = premium_per_share / avg(put_strike, call_strike) × 100."""
         result = calculate_strangles(chain_df)
         for row in result.collect():
             avg_strike = (row.put_strike + row.call_strike) / 2
-            expected = row.total_premium / avg_strike * 100
+            expected = (row.total_premium / 100) / avg_strike * 100
             assert abs(row.ROC - expected) < 1e-6
 
     def test_breakeven_width(self, chain_df):

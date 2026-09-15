@@ -69,12 +69,60 @@ def load_parquet(path: str) -> pd.DataFrame | None:
         return None
 
 
+def _load_dataset(name: str) -> pd.DataFrame | None:
+    """Load a named dataset from the shared Parquet output directory."""
+    return load_parquet(os.path.join(DATA_DIR, name))
+
+
+_SPREAD_GREEK_COLUMNS = {
+    "short_delta": st.column_config.NumberColumn(label="Short Delta", format="%.4f"),
+    "long_delta": st.column_config.NumberColumn(label="Long Delta", format="%.4f"),
+    "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
+    "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
+    "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
+    "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
+}
+
+
+def _spread_column_config(credit_label: str) -> dict:
+    """Shared column configuration for both credit and debit spread tabs."""
+    return {
+        "right": None,
+        "symbol": "Symbol",
+        "expiration": "Expiration",
+        "strategy": "Strategy",
+        "dte": "DTE",
+        **_pct_cols(
+            spread_ratio="Spread Ratio",
+            credit_yield="Credit Yield",
+            ROC="ROC",
+            pct_to_short_strike="% to Short Strike",
+            pct_to_long_strike="% to Long Strike",
+            pct_to_breakeven="% to Breakeven",
+        ),
+        **_dollar_cols(
+            short_strike="Short Strike",
+            long_strike="Long Strike",
+            short_mid="Short Price (Mid)",
+            long_mid="Long Price (Mid)",
+            credit=credit_label,
+            width="Width",
+            max_profit="Max Profit",
+            max_loss="Max Loss",
+            breakeven="Breakeven",
+            underlying_price="Underlying Price",
+        ),
+        **_SPREAD_GREEK_COLUMNS,
+    }
+
+
 # ── sidebar filters ──────────────────────────────────────────────────
 
 st.sidebar.title("Filters")
 
 # Load chain to get unique symbols and expirations
-chain_df = load_parquet(os.path.join(DATA_DIR, "option_chain"))
+chain_df = _load_dataset("option_chain")
+spreads_df = _load_dataset("spreads")
 
 if chain_df is not None and not chain_df.empty:
     min_spread_ratio = st.sidebar.slider(
@@ -150,64 +198,48 @@ if chain_df is None:
     st.stop()
 
 # ── tab layout ───────────────────────────────────────────────────────
-tab_spreads, tab_condors, tab_butterflies, tab_calendars, tab_strangles, tab_analytics, tab_chain = st.tabs(
-    ["Vertical Spreads", "Iron Condors", "Iron Butterflies", "Calendars", "Strangles", "Analytics", "Raw Chain"]
+tab_credit, tab_debit, tab_condors, tab_butterflies, tab_calendars, tab_strangles, tab_analytics, tab_chain = st.tabs(
+    ["Credit Spreads", "Debit Spreads", "Iron Condors", "Iron Butterflies", "Calendars", "Strangles", "Analytics", "Raw Chain"]
 )
 
-# ── Spreads ──────────────────────────────────────────────────────────
-with tab_spreads:
-    st.subheader("Credit / Debit Spreads")
-    spreads_df = load_parquet(os.path.join(DATA_DIR, "spreads"))
+# ── Credit Spreads (Put Credit + Call Credit) ────────────────────────
+with tab_credit:
+    st.subheader("Credit Spreads — Put & Call")
     if spreads_df is not None and not spreads_df.empty:
+        credit_df = spreads_df[spreads_df["strategy"].str.contains("Credit", na=False)]
         filtered = apply_spread_ratio_filter(
-            _header_filters(spreads_df, "spreads", extra_cols=["strategy"])
+            _header_filters(credit_df, "credit_spreads", extra_cols=["strategy"])
         )
         st.dataframe(
             filtered.sort_values("spread_ratio", ascending=False),
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "right": None,
-                "symbol": "Symbol",
-                "expiration": "Expiration",
-                "strategy": "Strategy",
-                "dte": "DTE",
-                **_pct_cols(
-                    spread_ratio="Spread Ratio",
-                    credit_yield="Credit Yield",
-                    roc="ROC",
-                    pct_to_short_strike="% to Short Strike",
-                    pct_to_long_strike="% to Long Strike",
-                    pct_to_breakeven="% to Breakeven",
-                ),
-                **_dollar_cols(
-                    short_strike="Short Strike",
-                    long_strike="Long Strike",
-                    short_mid="Short Price (Mid)",
-                    long_mid="Long Price (Mid)",
-                    credit="Credit",
-                    width="Width",
-                    max_profit="Max Profit",
-                    max_loss="Max Loss",
-                    breakeven="Breakeven",
-                    underlying_price="Underlying Price",
-                ),
-                "short_delta": st.column_config.NumberColumn(label="Short Delta", format="%.4f"),
-                "long_delta": st.column_config.NumberColumn(label="Long Delta", format="%.4f"),
-                "net_delta": st.column_config.NumberColumn(label="Net Delta", format="%.4f"),
-                "net_gamma": st.column_config.NumberColumn(label="Net Gamma", format="%.6f"),
-                "net_theta": st.column_config.NumberColumn(label="Net Theta", format="%.4f"),
-                "net_vega": st.column_config.NumberColumn(label="Net Vega", format="%.4f"),
-            },
+            column_config=_spread_column_config("Credit"),
         )
-        st.caption(f"{len(filtered)} spreads shown")
+        st.caption(f"{len(filtered)} credit spreads shown")
     else:
-        st.info("No spread data available yet.")
+        st.info("No credit spread data available yet.")
+
+# ── Debit Spreads (Put Debit + Call Debit) ───────────────────────────
+with tab_debit:
+    st.subheader("Debit Spreads — Put & Call")
+    if spreads_df is not None and not spreads_df.empty:
+        debit_df = spreads_df[spreads_df["strategy"].str.contains("Debit", na=False)]
+        filtered = _header_filters(debit_df, "debit_spreads", extra_cols=["strategy"])
+        st.dataframe(
+            filtered.sort_values("spread_ratio", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config=_spread_column_config("Net Debit"),
+        )
+        st.caption(f"{len(filtered)} debit spreads shown")
+    else:
+        st.info("No debit spread data available yet.")
 
 # ── Iron Condors ─────────────────────────────────────────────────────
 with tab_condors:
     st.subheader("Iron Condors")
-    condors_df = load_parquet(os.path.join(DATA_DIR, "iron_condors"))
+    condors_df = _load_dataset("iron_condors")
     if condors_df is not None and not condors_df.empty:
         filtered = apply_spread_ratio_filter(
             _header_filters(condors_df, "condors")
@@ -223,7 +255,7 @@ with tab_condors:
                 **_pct_cols(
                     spread_ratio="Spread Ratio",
                     credit_yield="Credit Yield",
-                    roc="ROC",
+                    ROC="ROC",
                     pct_to_lower_breakeven="% to Lower BE",
                     pct_to_upper_breakeven="% to Upper BE",
                 ),
@@ -256,7 +288,7 @@ with tab_condors:
 # ── Strangles ────────────────────────────────────────────────────────
 with tab_strangles:
     st.subheader("Short Strangles")
-    strangles_df = load_parquet(os.path.join(DATA_DIR, "strangles"))
+    strangles_df = _load_dataset("strangles")
     if strangles_df is not None and not strangles_df.empty:
         filtered = _header_filters(strangles_df, "strangles")
         st.dataframe(
@@ -268,7 +300,7 @@ with tab_strangles:
                 "expiration": "Expiration",
                 "dte": "DTE",
                 **_pct_cols(
-                    roc="ROC",
+                    ROC="ROC",
                     pct_to_put_strike="% to Put Strike",
                     pct_to_call_strike="% to Call Strike",
                     pct_to_lower_breakeven="% to Lower BE",
@@ -299,10 +331,10 @@ with tab_strangles:
     else:
         st.info("No strangle data available yet.")
 
-        # ── Iron Butterflies ─────────────────────────────────────────────────
+# ── Iron Butterflies ─────────────────────────────────────────────────
 with tab_butterflies:
     st.subheader("Iron Butterflies")
-    butterflies_df = load_parquet(os.path.join(DATA_DIR, "iron_butterflies"))
+    butterflies_df = _load_dataset("iron_butterflies")
     if butterflies_df is not None and not butterflies_df.empty:
         filtered = apply_spread_ratio_filter(
             _header_filters(butterflies_df, "butterflies")
@@ -314,7 +346,7 @@ with tab_butterflies:
             column_config={
                 "symbol": "Symbol", "expiration": "Expiration", "dte": "DTE",
                 **_pct_cols(
-                    spread_ratio="Spread Ratio", credit_yield="Credit Yield", roc="ROC",
+                    spread_ratio="Spread Ratio", credit_yield="Credit Yield", ROC="ROC",
                     pct_to_atm_strike="% to ATM Strike",
                     pct_to_lower_breakeven="% to Lower BE",
                     pct_to_upper_breakeven="% to Upper BE",
@@ -342,7 +374,7 @@ with tab_butterflies:
 # ── Calendar Spreads ─────────────────────────────────────────────────
 with tab_calendars:
     st.subheader("Calendar Spreads")
-    calendars_df = load_parquet(os.path.join(DATA_DIR, "calendars"))
+    calendars_df = _load_dataset("calendars")
     if calendars_df is not None and not calendars_df.empty:
         filtered = _header_filters(calendars_df, "calendars", extra_cols=["right"])
         st.dataframe(
@@ -354,7 +386,7 @@ with tab_calendars:
                 "near_expiration": "Near Expiry", "far_expiration": "Far Expiry",
                 "near_dte": "Near DTE", "far_dte": "Far DTE", "dte_gap": "DTE Gap",
                 **_pct_cols(
-                    approx_roc="Approx ROC",
+                    approx_ROC="Approx ROC",
                     pct_to_strike="% to Strike",
                 ),
                 **_dollar_cols(
@@ -385,7 +417,7 @@ with tab_analytics:
 
     with col_em:
         st.markdown("#### Expected Move (ATM Straddle)")
-        em_df = load_parquet(os.path.join(DATA_DIR, "expected_move"))
+        em_df = _load_dataset("expected_move")
         if em_df is not None and not em_df.empty:
             filtered_em = _header_filters(em_df, "em")
             st.dataframe(
@@ -410,7 +442,7 @@ with tab_analytics:
 
     with col_mp:
         st.markdown("#### Max Pain")
-        mp_df = load_parquet(os.path.join(DATA_DIR, "max_pain"))
+        mp_df = _load_dataset("max_pain")
         if mp_df is not None and not mp_df.empty:
             filtered_mp = _header_filters(mp_df, "mp")
             st.dataframe(

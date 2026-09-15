@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from pyspark.sql import DataFrame, Window
+from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def calculate_calendars(chain_df: DataFrame) -> DataFrame:
             F.col("f.mid").alias("far_mid"),
             net_debit_contract.alias("net_debit"),           # cost to open, ×100
             approx_max_profit.alias("approx_max_profit"),    # if short expires 0
-            (approx_max_profit / net_debit_contract * 100).alias("approx_roc"),
+            (approx_max_profit / net_debit_contract * 100).alias("approx_ROC"),
             theta_differential.alias("theta_differential"),  # near − far (should be >0)
             iv_differential.alias("iv_differential"),        # near IV − far IV
             F.col("n.underlying_price").alias("underlying_price"),
@@ -109,4 +109,5 @@ def calculate_calendars(chain_df: DataFrame) -> DataFrame:
     )
 
     logger.info("Generated %d calendar spread candidates", result.count())
+
     return result

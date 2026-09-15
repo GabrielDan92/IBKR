@@ -32,8 +32,11 @@ derby.log
 .DS_Store
 Thumbs.db
 
-# Output data
-data/
+# Output data (keep the folder, ignore generated files)
+data/*/
+data/*.parquet
+data/*.json
+data/*.csv
 
 # Testing
 .pytest_cache/

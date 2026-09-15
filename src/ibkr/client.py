@@ -15,10 +15,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ib_async import IB, Contract, Index, Option, Stock, Ticker, util
+from ib_async import IB, Contract, Option, Stock, Ticker
 
 from config.constants import (
     BATCH_PAUSE_S,
@@ -36,12 +36,10 @@ from config.constants import (
     TARGET_DTE,
     TICK_SETTLE_S,
 )
-from src.ibkr.base import BaseMarketDataClient
-
 logger = logging.getLogger(__name__)
 
 
-class IBKRClient(BaseMarketDataClient):
+class IBKRClient:
     """
     Concrete market-data provider backed by IB Gateway / TWS.
 
@@ -65,6 +63,13 @@ class IBKRClient(BaseMarketDataClient):
         self._port = port
         self._client_id = client_id
         self._ib = IB()
+
+    async def __aenter__(self) -> "IBKRClient":
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # noqa: ANN001
+        await self.disconnect()
 
     # ── lifecycle ────────────────────────────────────────────────────
 
@@ -186,7 +191,7 @@ class IBKRClient(BaseMarketDataClient):
         chain = next((c for c in chains if c.exchange == DEFAULT_EXCHANGE), chains[0])
 
         # Step 3 — filter expirations
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         min_expiry = today + timedelta(days=target_dte - dte_range_days)
         max_expiry = today + timedelta(days=target_dte + dte_range_days)
 
@@ -339,21 +344,25 @@ class IBKRClient(BaseMarketDataClient):
 
 
 def _mid_price(ticker: Ticker) -> float | None:
-    """Return best available price: mid(bid,ask) → last → close → marketPrice."""
+    """Return best available price: mid(bid,ask) → last → close → marketPrice.
+
+    IBKR returns -1 as a sentinel when no data is available (market closed,
+    no subscription, etc.).  All branches guard against non-positive values.
+    """
     bid = _safe_float(ticker.bid)
     ask = _safe_float(ticker.ask)
-    if bid is not None and ask is not None:
+    if bid is not None and ask is not None and bid > 0 and ask > 0:
         return (bid + ask) / 2.0
     last = _safe_float(ticker.last)
-    if last is not None:
+    if last is not None and last > 0:
         return last
     close = _safe_float(ticker.close)
-    if close is not None:
+    if close is not None and close > 0:
         return close
     # ib_async built-in fallback (last → mid → close)
     try:
         mp = ticker.marketPrice()
-        if mp is not None and math.isfinite(mp):
+        if mp is not None and math.isfinite(mp) and mp > 0:
             return mp
     except (AttributeError, TypeError):
         pass
@@ -404,7 +413,7 @@ def _ticker_to_row(
 
     # DTE
     expiry_date = datetime.strptime(contract.lastTradeDateOrContractMonth, "%Y%m%d").date()
-    dte = (expiry_date - datetime.utcnow().date()).days
+    dte = (expiry_date - datetime.now(timezone.utc).date()).days
 
     # Open interest & volume
     open_interest = None
@@ -428,6 +437,7 @@ def _ticker_to_row(
         "bid": bid,
         "ask": ask,
         "last": last,
+        "close": close,
         "mid": mid,
         "delta": delta,
         "gamma": gamma,
